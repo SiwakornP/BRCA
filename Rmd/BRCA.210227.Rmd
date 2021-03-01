@@ -1,0 +1,221 @@
+---
+title: "Human BRCA scRNA seq"
+author: "Siwakorn"
+date: "2021/2/27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(Seurat)
+library(tidyverse)
+```
+
+```{r}
+color_ig = scale_color_gradientn(colours = c("grey","#120078","#9d0191","#fd3a69","#fecd1a"), values = c(0,0.1,0.3,0.6,1))
+Dot_axis90 = theme(axis.text.x =  element_text(size = 15, angle = 90, hjust = 1, vjust = 0.3), axis.text.y = element_text(size = 15)) 
+Dot_scale = scale_size(range = c(1.5,8),name = "Percent Expression") 
+
+color_orange = scale_color_gradientn(colours = c("grey","yellow","orange","red"), values = c(0,0.1,0.5,1))
+```
+
+```{r}
+SunnyMarkers <- list(
+  "cDC1" = c("CLEC9A","IRF8","IDO1","XCR1","CXCL16"),
+  "cDC2" = c("CD1C","CD1E","FCER1A","FCER1G","ITGAX","FCGR2B","CLEC10A"),
+  "CCR7_DC" = c("CCR7","CD40","RELB","CCL19","CCL22","IL12B","LAMP3","NRP2"),
+   "M1" = c("CD68","CD14","C1QA","C1QB","C1QC","FCGR2A","CCL3"),
+  "M2" = c("CXCL8","IFI30","CXCL3","CXCL10","CCL4"),
+  "M3.1" = c("LTB","DDIT4","CNN2","GABARAP"),
+  "M3.2" = c("TUBB","TUBA1B","BTG1","ACTB","MTRNR2L12"),
+  "M4" = c("FCN1","VCAN","S100A8","S100A9"),
+  "M5" = c("SPP1","MIF","FTL","CYP27A1"),
+  "NK" = c("NKG7","GNLY","NCAM1","KLRD1","KLRF1","FCER1G","XCL1","XCL2"),
+  "T" = c("CD3D","CD3E","CD4","CD8A","CD44","CD69","ICOS"),
+  "Naive" = c("TCF7","LEF1","SELL","CCR7"),
+  "CD8_effector" =c("CD27","CD28","GZMA","GNLY","PRF1","GZMB", "GZMK","IFNG","ZNF683","HOPX"),
+  "Memory" = c("IL7R","ITGAE"),
+  "Exhausted" = c("LAG3","TIGIT","PDCD1","HAVCR2","TOX","TOX2","VSIR","TNFRSF9"),
+  "Treg" = c("CTLA4","FOXP3","CD274","PDCD1LG2","TNFRSF4","TNFRSF18"),
+  "Proliferation" = c("MKI67","TOP2A","CDK1"),
+  "B" = c("CD79A","IGHM","IGHD","CD19","MS4A1"),
+  "Plasma_cell" = c("CD38","TNFRSF17","IGHG1","IGHA2","JCHAIN","CD38"),
+  "Epithelial" = c("EPCAM","KRT18","KRT19","CDH1","KRT8","KRT14"),
+  "Endothelial" = c("PECAM1","CLDN5","FLT1","RAMP2","VWF"),
+  "Stromal" = c("CD34","ACTA2","CSF1","IL2","IL7","IL16"),
+  "Fibroblast" = c("DCN","THY1","COL1A1","COL1A2"),
+  "Other" = c("AREG","PTGER1","PTGER2","PTGER3","PTGER4"),
+  "MHC" = c("HLA-DPA1","HLA-DPB1","HLA-DQA2","HLA-DQA2","HLA-DQB1","HLA-DRA","HLA-DRB5","HLA-DMA")
+  )
+
+
+SunnyMarkers.Minimal <- c("CD14","CD68","C1QB","FCGR2A","LYZ",
+                          "CD3D","CD3E","CD8B","CD44","CD68","IL7R","CCL5","GZMA",
+                          "MKI67","TOP2A","CDK1","STMN1",
+                          "CD79A","IGHM","IGHD","CD19","MS4A1",
+                          "CD38","TNFRSF17","IGHG1","IGHA2","JCHAIN",
+                          "EPCAM","CDH1","KRT8","KRT18","KRT19",
+                          "DCN","THY1","COL1A1","COL1A2",
+                          "ACTA2","TAGLN","MYL9","TPM1",
+                          "PECAM1","CLDN5","FLT1","RAMP2","VWF",
+                          "LILRA4","PLD4","PLAC8","IRF7"
+                          )
+
+SunnyMarkers.T <- list(
+  "NK" = c("NKG7","GNLY","NCAM1","KLRD1","KLRF1","XCL1","XCL2"),
+  "T" = c("CD3D","CD3E","CD4","CD8A"),
+  "Naive" = c("TCF7","LEF1","SELL","CCR7"),
+  "CD8_effector" =c("CD27","CD44","CD69","GZMA","GNLY","PRF1","GZMB", "GZMK","IFNG","ZNF683","HOPX"),
+  "Memory" = c("IL7R","ITGAE"),
+  "Exhausted" = c("LAG3","TIGIT","PDCD1","HAVCR2","TOX","TOX2","VSIR","TNFRSF9"),
+  "Treg" = c("CTLA4","FOXP3","TNFRSF4","TNFRSF18","CD274","PDCD1LG2"),
+  "Proliferation" = c("MKI67","TOP2A","CDK1"),
+  "Other" = c("AREG","PTGER1","PTGER2","PTGER3","PTGER4")
+)
+Markers.T4 <- c("CD3D","CD3E","CD4","CD8A","TCF7","SELL","LEF1","CCR7","CD44","CD69","CD27","IL7R","ITGAE","LAG3","TIGIT","PDCD1","HAVCR2","CTLA4","IL2","GZMA","GNLY","PRF1","GZMB", "GZMK","IFNG","NKG7","CD28","TNFRSF14","ICOS","TNFRSF9","EOMES","HOPX","TBX21","ZEB2","ZNF683","XCL1","XCL2","NCR3","TRGC2","HIF1A","ID2","TOX","IL2A","FOXP3","IKZF2","RGCC","AREG","PTGER4")
+
+Markers.M <- list(
+  "cDC1" = c("CLEC9A","IRF8","IDO1","XCR1"),
+  "cDC2" = c("CD1C","CD1E","FCER1A","FCER1G","ITGAX","FCGR2B","CLEC10A"),
+  "CCR7_DC" = c("CCR7","CD40","RELB","CCL19","CCL22","IL4I1","IL12B","LAMP3","NRP2"),
+   "M1" = c("CD68","CD14","C1QA","C1QB","C1QC","FCGR2A","CCL3"),
+  "M2" = c("CXCL8","IFI30","CXCL3","CXCL10","CCL4"),
+  "M3.1" = c("LTB","DDIT4","CNN2","GABARAP"),
+  "M3.2" = c("TUBB","TUBA1B","BTG1","ACTB","MTRNR2L12"),
+  "M4" = c("FCN1","VCAN","S100A8","S100A9"),
+  "M5" = c("SPP1","MIF","FTL","CYP27A1")
+)
+
+PG.genes = c("PTGS1","PTGS2","PTGES","PTGES2","PTGES3","PTGER1","PTGER2","PTGER3","PTGER4","PTGDS","PTGDR","PTGDR2")
+```
+
+
+```{r}
+data.dir = c(
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/CellRangerOut/BRCA1_CD45/filtered_feature_bc_matrix/",
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/CellRangerOut/BRCA1_CD45/raw_feature_bc_matrix/",
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/CellRangerOut/BRCA1_EP4/filtered_feature_bc_matrix/",
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/CellRangerOut/BRCA1_EP4/raw_feature_bc_matrix/"
+)
+name = c("BRCA1_CD45_filtered","BRCA1_CD45_raw","BRCA1_EP4_filtered","BRCA1_EP4_raw")
+obj = list()
+m=1
+for(i in data.dir){
+      tmp = Read10X(data.dir = i)
+      obj[[m]] <- CreateSeuratObject(counts = tmp, project = name[m], min.cells = 3, min.features = 0)
+      print(m)
+      m=m+1
+}
+tmp = obj[[4]][[]] %>% arrange(desc(nCount_RNA))
+
+raw <- list()
+filter <- list()
+
+raw[[1]] <- subset(obj[[2]], subset = nCount_RNA > 50)
+raw[[2]] <- subset(obj[[4]], subset = nCount_RNA > 50)
+
+filter[[1]] <- obj[[1]]
+filter[[2]] <- obj[[3]]
+
+raw[[1]] <- raw[[1]]@assays$RNA@counts %>% as.matrix()
+raw[[2]] <- raw[[2]]@assays$RNA@counts %>% as.matrix()
+filter[[1]] <- filter[[1]]@assays$RNA@counts %>% as.matrix()
+filter[[2]] <- filter[[2]]@assays$RNA@counts %>% as.matrix()
+
+saveRDS(raw, file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/DecontX/BRCA1/Raw/Matrix.Raw.rds")
+saveRDS(filter, file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/DecontX/BRCA1/Filtered/Matrix.Filtered.rds")
+
+rownames(Matrix.Filtered[[1]]) %>% length()
+colnames(Matrix.Filtered[[1]]) %>% length()
+raw <- c()
+filter <- c()
+```
+
+```{r}
+filter
+for(i in 1:length(filter)){
+      filter[[i]][["percent.mt"]] <- PercentageFeatureSet(filter[[i]], pattern = "MT-")
+      print(FeatureScatter(filter[[i]], feature1 = "nCount_RNA", feature2 = "percent.mt") +geom_hline(yintercept = 15))
+      print(FeatureScatter(filter[[i]], feature1 = "nCount_RNA", feature2 = "nFeature_RNA") +geom_hline(yintercept = 4300)) 
+}
+for(i in 1:length(filter)){
+      filter[[i]] <- subset(filter[[i]], subset = nFeature_RNA < 4500 & percent.mt <15)     
+}
+saveRDS(filter, file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/BRCA1.SeuratObject.list.210227.rds")
+```
+
+```{r}
+DecontX.filtered <- readRDS("/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/DecontX/BRCA1/Filtered/DecontX.Result.list.rds")
+DecontX.raw <- readRDS("/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/DecontX/BRCA1/Raw/DecontX.Result.list.rds")
+
+DecontX.filtered[[1]]$resList$estNativeCounts %>% dim()
+
+filtered <- list()
+raw <- list()
+name = c("BRCA1_CD45","BRCA1_EP4")
+
+for(i in 1:length(DecontX.filtered)){
+    filtered[[i]] <- CreateSeuratObject(counts = DecontX.filtered[[i]]$resList$estNativeCounts , project = name[i], min.cells = 3, min.features = 0)
+    filtered[[i]][["percent.mt"]] <- PercentageFeatureSet(filtered[[i]], pattern = "^MT-")
+}
+
+for(i in 1:length(DecontX.raw)){
+    raw[[i]] <- CreateSeuratObject(counts = DecontX.raw[[i]]$resList$estNativeCounts , project = name[i], min.cells = 3, min.features = 0)
+    raw[[i]][["percent.mt"]] <- PercentageFeatureSet(raw[[i]], pattern = "^MT-")
+}
+
+
+
+grep("^MT", rownames(raw[[1]])[1:10])
+filtered[[1]]
+
+decontXcounts()
+
+raw[[1]]
+```
+
+```{r}
+for(i in 1:length(filtered)){
+   print(FeatureScatter(filtered[[i]], feature1 = "nCount_RNA", feature2 = "percent.mt") +geom_hline(yintercept = 15))
+   print(FeatureScatter(filtered[[i]], feature1 = "nCount_RNA", feature2 = "nFeature_RNA") +geom_hline(yintercept = 4300)) 
+}
+```
+
+
+
+```{r}
+obj[[2]][["percent.mt"]] <- PercentageFeatureSet(obj[[2]], pattern = "^MT-")
+tmp = obj[[2]][[]]
+tmp = arrange(tmp, desc(nFeature_RNA))
+tmp$rank <- 1:nrow(tmp)
+tmp$rank2 <- log10(tmp$rank)
+plot(tmp$rank2, tmp$nFeature_RNA)
+tmp = tmp[1:5000,]
+tmp$Ratio <- tmp$nCount_RNA/tmp$nFeature_RNA
+ggplot(tmp, aes(x = nFeature_RNA, y = nCount_RNA, color = percent.mt)) + geom_point()
+ggplot(tmp, aes(x = nFeature_RNA, y =  Ratio)) + geom_point()
+
+
+obj[[1]]@assays$RNA@counts
+```
+
+```{r}
+integrated <- readRDS("/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/object.integrated.210227.rds")
+DimPlot(integrated, label = T)
+
+Idents(integrated) <- integrated$integrated_snn_res.0.2
+VlnPlot(integrated, features = "PTGER4", pt.size = 0)
+Export.List = unlist(SunnyMarkers)
+Export.List = PG.genes
+for(i in Export.List){
+      print(
+            FeaturePlot(integrated, features = i) + color_ig
+      )
+}
+
+DotPlot(integrated, features = c("CD3D","CD3E"))
+```
+
