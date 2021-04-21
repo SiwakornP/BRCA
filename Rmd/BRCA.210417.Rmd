@@ -1,0 +1,1295 @@
+---
+title: "BRCA.210406"
+author: "Siwakorn"
+date: "2021/4/6"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Library
+```{r}
+library(Seurat)
+library(tidyverse)
+library(rcartocolor)
+library(viridis)
+library(ggrepel)
+```
+
+#Col
+```{r}
+color_orange = scale_color_gradientn(colours = c("grey","yellow","orange","red"), values = c(0,0.1,0.5,1))
+scale_SummaerSea = scale_color_gradientn(colours = c("#173F5F","#20639B","#3CAEA3","#F6D55C","#ED553B"))
+col_SummaerSea = c("#173F5F","#20639B","#3CAEA3","#F6D55C","#ED553B")
+scale_SummaerSea2 = scale_color_gradientn(colours = c("#6F42AF","#173F5F","#20639B","#3CAEA3","#F6D55C","#ED553B"))
+col_SummaerSea2 = c("#6F42AF","#173F5F","#20639B","#3CAEA3","#F6D55C","#ED553B")
+
+color_ig = scale_color_gradientn(colours = c("grey","#120078","#9d0191","#fd3a69","#fecd1a"), values = c(0,0.1,0.3,0.6,1))
+col_LemonTree <- c("grey", rcartocolor::carto_pal(6, name = "ag_GrnYl") )
+col_viridis <- c("grey",c(viridis::viridis(6))[1:5],"#fecd1a" )
+col_RedBlue1 <- scale_fill_gradient2(mid="#FBFEF9",low="#0C6291",high="#A63446",space = "Lab",name="Scale Expression" ,na.value = "white")
+col_RedBlue2 <- scale_fill_gradient2(mid="#FBFEF9",low="#2c75ab",high="#e2413b",space = "Lab",name="Scale Expression" ,na.value = "white") 
+scale_RedGreen = scale_color_gradientn(colours = c("grey",rev(c("#f94144","#f3722c","#f8961e","#f9c74f","#90be6d","#43aa8b","#577590")) ), values = c(0,0.1,0.2,0.4,0.6,0.8,0.9,1))
+```
+
+#Instant command
+```{r}
+Dot_axis90 = theme(axis.text.x =  element_text(size = 15, angle = 90, hjust = 1, vjust = 0.3,color = "black"), axis.text.y = element_text(size = 15)) 
+Dot_scale = scale_size(range = c(1.5,8),name = "Percent Expression") 
+Dot_scale2 = scale_size(range = c(3,8),name = "Percent Expression") 
+find <- function(x){
+      rownames(scBRCA1)[grep(x,rownames(scBRCA1) )]
+}
+
+
+date = "210419"
+fig <-function(x){
+  paste0("/home/siwakorn/BRCA/Fig/210419_summary/scBRCA1.",x,".",gsub("-","", Sys.Date()),".png" )
+}
+dir.create("/home/siwakorn/BRCA/Fig/210419_summary/")
+```
+
+#Gene Setting
+```{r}
+Gene.Primary = list(
+  "DC" = c("CCR7","LAMP3","CCL22","CCL17","CLEC9A","BATF3", "LGALS2","CD1A","CD1C","CD1E","NLRP3","CLEC4C","LRRC26","SCT"),
+  "Lym" = c("KLRC1","KLRF1","XCL1","XCL2","IFNG","CCL5","NCR3","CD3G","CD3E","CD8A","CTLA4","FOXP3"),
+  "My" = c("C1QC","C1QA","CD14","SPP1","CD68"),
+  "B" = c("FCRL5","CD79A","IGHG4"),
+  "Other" = c("ANGPT1","COL10A1","KRT15","AGER","VWF","PECAM1","CDH5","KIT","TPSB2","HDC") 
+)%>% unlist() %>% as.character()
+
+Gene.Primary = c("CD3D","CD3G","CCL5","GZMA","NKG7","CD14","LYZ","S100A9","C1QC","IL1B",
+                   "CLEC9A","BATF3","XCR1","IRF8","CD1E","CD1A","HLA-DQA2","HLA-DQB2","CD207",
+                   "LILRA4","IRF7","CLEC4C",
+                   "IGHM","CD79A","IGHD",
+                   "TPSB2","KIT","HDC","CSF1",
+                   "VWF","COL4A1","PECAM1",
+                   "S100A14","KRT8","KRT18","KRT19",
+                   "AL022069.1","AC087239.1","HSPA2","PLK2","MKI67",
+                   "PTGS1","PTGS2","PTGER2","PTGER4")
+```
+
+
+#Create seurat object
+```{r}
+data.dir = c(
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/CellRangerOut/BRCA1_CD45/filtered_feature_bc_matrix/",
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/CellRangerOut/BRCA1_EP4/filtered_feature_bc_matrix/"
+)
+
+BRCA <- list()
+name = c("CD45","EP4")
+for(i in 1:2 ){
+      tmp = Read10X(data.dir = data.dir[i]  )
+      BRCA[[i]] <- CreateSeuratObject(counts = tmp, project = name[i], min.cells = 3, min.features = 0)
+      BRCA[[i]][["percent.mt"]] <- PercentageFeatureSet(BRCA[[i]], pattern = "^MT-")
+      BRCA[[i]]$Batch <- "scBRCA1"
+      BRCA[[i]]$DecontX <- "No"
+}
+
+
+Decontx.dir = c(
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/DecontX/BRCA1/Filtered/BRCA1_no1_decontx_result.rds",
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/DecontX/BRCA1/Filtered/BRCA1_no2_decontx_result.rds",
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/DecontX/BRCA1/Filtered/BRCA1_no1.filter.Count500.Mt10_decontx_result.rds",
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/DecontX/BRCA1/Filtered/BRCA1_no2.filter.Count500.Mt10_decontx_result.rds",
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/DecontX/BRCA1/Raw/BRCA1_no1.Raw.Count54-65_decontx_result.rds",
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/DecontX/BRCA1/Raw/BRCA1_no2.Raw.Count54-65_decontx_result.rds"
+)
+m =1
+i= 3
+Decontx = c("NaiveFiltered","NaiveFiltered","Count500Mt10","Count500Mt10","Raw.Count54-65","Raw.Count54-65")
+name = c("CD45","EP4","CD45","EP4","CD45","EP4")
+for(i in 3:8){
+      tmp = readRDS(file = Decontx.dir[m])
+      BRCA[[i]] <- CreateSeuratObject(counts = tmp$resList$estNativeCounts , project = name[m], min.cells = 3, min.features = 0)
+      BRCA[[i]][["percent.mt"]] <- PercentageFeatureSet(BRCA[[i]], pattern = "^MT-")
+      BRCA[[i]]$Batch <- "scBRCA1"
+      BRCA[[i]]$DecontX <- Decontx[m]
+      m=m+1
+}
+
+BRCA[[7]][[]]
+saveRDS(BRCA, file = paste0(folder,"scBRCA1.SeuratObject.210412.rds"))
+
+BRCA <- readRDS(file = paste0(folder,"scBRCA1.SeuratObject.210412.rds"))
+BRCA
+```
+
+
+Processed script : Integration.210412.r
+#DecontX benchmark
+```{r}
+scBRCA1 <- readRDS("/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.DecontXComparison.210412.rds")
+
+Idents(scBRCA1) <- scBRCA1$integrated_snn_res.0.3
+DimPlot(scBRCA1, label =T)
+table(scBRCA1$orig.ident, scBRCA1$DecontX)
+
+DE.DEcont <- list()
+set = c("No-NaiveFiltered", "NaiveFiltered-Raw54.65")
+DefaultAssay(scBRCA1) <- "RNA"
+for(i in 1:2){
+      scBRCA1.sub <- subset(scBRCA1, idents = i )
+      Idents(scBRCA1.sub) <- scBRCA1.sub$DecontX
+      levels(Idents(scBRCA1.sub))
+      name = paste0("Cluster",i, ".",set[1])
+      DE.DEcont[[name]] = FindMarkers(scBRCA1.sub, ident.1 = "No",ident.2 = "NaiveFiltered",logfc.threshold = 0.01  )
+      name = paste0("Cluster",i, ".",set[2])
+      DE.DEcont[[name]] = FindMarkers(scBRCA1.sub, ident.1 = "NaiveFiltered"  ,ident.2 = "Raw.Count54-65",logfc.threshold = 0.01 )
+}
+for(i in 1:4){
+      tmp = DE.DEcont[[i]] %>% as_tibble(rownames ="Gene")
+      tmp <- arrange(tmp, desc(avg_logFC))
+      tmp$used <- c(rep("Label",10),rep("Unlabel",nrow(tmp)-20), rep("Label",10) )
+      tmp$logPvalue = (-1)*log(tmp$p_val,base=1000)
+      png(filename = fig(paste0("Volcano.",names(DE.DEcont)[i]) ) , width = 7, height = 8, units="in",res=200)
+      border = max(tmp$avg_logFC,-(min(tmp$avg_logFC)) )
+    print(
+      ggplot(tmp, aes(x = avg_logFC, y = logPvalue, color = used, size = used )) + 
+        geom_point() +
+        scale_color_manual(values = c("firebrick2","black"))+ #select gray65 or black
+        scale_size_manual(values = c( 1.5, 0.75) ) +
+        theme_linedraw(base_size = 40)+
+        theme(text=element_text(size = 12))+
+        geom_vline(xintercept = c(-0.3,0.3)) +
+        geom_hline(yintercept = c(2)) +
+        xlim(-border,border) +
+        ylab("- log1000(p-value)") +
+        geom_text_repel(size =6,fontface ="bold", data = subset(tmp, used == "Label"),aes(label = Gene, hjust = 1.2)) +
+        NoLegend()
+      )
+  dev.off()
+ }
+     
+
+```
+#-----Clustering and Identification-------
+##Load Dataset
+```{r}
+scBRCA1 <- readRDS("/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.DecontXFilterRead.210406.rds")
+Idents(scBRCA1) <- scBRCA1$integrated_snn_res.0.5
+DimPlot(scBRCA1, label =T)
+```
+
+##Identity
+```{r,fig.width=10}
+DefaultAssay(scBRCA1) <-"RNA"
+
+selected.genes = unlist(Gene.Primary)
+DotPlot(scBRCA1, features = selected.genes) + scale_SummaerSea2  +Dot_scale+Dot_axis90
+scBRCA1 <- RenameIdents(scBRCA1, 
+                        '0' = "T_cell",
+                        '1' = "Myeloid",
+                        '2' = "Myeloid",
+                        '3' = "T_cell",
+                        '4' = "T_cell",
+                        '5' = "Myeloid",
+                        '6' = "Myeloid",
+                        '7' = "Unk1",
+                        '8' = "Mast_cell",
+                        '9' = "T_cell",
+                        '10' = "T_cell",
+                        '11' = "T_cell",
+                        '12' = "T_Proliferating",
+                        '13' = "cDC2",
+                        '14' = "cDC1",
+                        '15' = "B_cell",
+                        '16' = "pDC",
+                        '17' = "Endothelial",
+                        '18' = "LQ")
+DimPlot(scBRCA1)
+                        
+
+scBRCA1$Identity.Primary <- factor(Idents(scBRCA1), levels = c("T_cell","T_Proliferating","Myeloid","cDC1","cDC2","pDC","B_cell","Mast_cell","Endothelial","Unk1","LQ"))
+Idents(scBRCA1) <- scBRCA1$Identity.Primary
+
+saveRDS(scBRCA1,file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.NaivedFilertedDecontX.Identity.Primary.210413.rds")
+```
+
+
+
+##QC Per cluster
+```{r}
+df = FetchData(scBRCA1, vars = c("nCount_RNA","nFeature_RNA","percent.mt","integrated_snn_res.0.5","Identity.Primary"))
+df$CG <- df$nCount_RNA/df$nFeature_RNA
+ggplot(df, aes(x= integrated_snn_res.0.5, y = percent.mt )) + geom_jitter() + geom_violin(scale = "width") 
+ggplot(df, aes(x= integrated_snn_res.0.5, y = nCount_RNA )) + geom_jitter() + geom_violin(scale = "width")
+ggplot(df, aes(x= integrated_snn_res.0.5, y = nFeature_RNA )) + geom_jitter() + geom_violin(scale = "width")
+
+
+df = FetchData(scBRCA1, vars = c("nCount_RNA","nFeature_RNA","percent.mt","integrated_snn_res.0.5","Identity.primary"))
+
+for(i in c("percent.mt","nCount_RNA","nFeature_RNA")){
+      png(filename = paste0("/home/siwakorn/BRCA/Fig/210407_IdentityPrimary_DecontXComparison/scBRCA1.Identity.Primary.QC.",i,".png"), width = 8, height =5, units = "in",res =200)
+      print(
+            ggplot(df, aes_string(x= "Identity.primary", y = i )) + geom_jitter() + geom_violin(scale = "width") +
+                  Dot_axis90 +
+                  theme(axis.title.y = element_text(size =15,color = "black"))
+      )
+      dev.off()
+}
+ggplot(df, aes(x= Identity.Primary, y = percent.mt )) + geom_jitter() + geom_violin(scale = "width") 
+ggplot(df, aes(x= Identity.Primary, y = nCount_RNA )) + geom_jitter() + geom_violin(scale = "width")
+ggplot(df, aes(x= Identity.Primary, y = nFeature_RNA )) + geom_jitter() + geom_violin(scale = "width")
+ggplot(df, aes(x= Identity.Primary, y = CG )) + geom_jitter() + geom_violin(scale = "width")
+
+```
+
+
+##DoubletFinder
+```{r}
+library("DoubletFinder")
+object <- readRDS(file = paste0(folder,"scBRCA1.SeuratObject.210412.rds"))
+object <- list(object[[3]],object[[4]])
+for(i in 1:2){
+	object[[i]] <- subset(object[[i]], nCount_RNA > 500 & percent.mt < 10 )
+	object[[i]] <- NormalizeData(object[[i]] )
+	object[[i]] <- FindVariableFeatures(object[[i]] , selection.method = "vst", nfeatures = 2000)
+	object[[i]] <- ScaleData(object[[i]] )
+      object[[i]] <- RunPCA(object[[i]])
+      object[[i]] <- RunUMAP(object[[i]], dims = 1:10)
+}
+
+saveRDS(object, file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.PreDoubletFinder.210413.rds")
+
+
+library("DoubletFinder")
+object.list <- readRDS(file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.PreDoubletFinder.210413.rds" )
+scBRCA1 <- readRDS(file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.NaivedFilertedDecontX.Identity.Primary.210413.rds" )
+resultA <- list()
+resultB <- list()
+for(i in 1){
+      DimPlot(object)
+      object = object.list[[i]]
+	object <- subset(object, nCount_RNA > 500 & percent.mt < 10 )
+	object <- NormalizeData(object )
+	object <- FindVariableFeatures(object , selection.method = "vst", nfeatures = 2000)
+	object <- ScaleData(object )
+      object <- RunPCA(object)
+      object <- RunUMAP(object, dims = 1:10)
+## pK Identification (no ground-truth) ---------------------------------------------------------------------------------------
+sweep.res.list <- paramSweep_v3(object, PCs = 1:10, sct = FALSE)
+print("A1")
+sweep.stats <- summarizeSweep(sweep.res.list, GT = FALSE)
+print("A2")
+bcmvn <- find.pK(sweep.stats)
+print("A")
+## Homotypic Doublet Proportion Estimate -------------------------------------------------------------------------------------
+Meta = scBRCA1[[]] %>% dplyr::select(Identity.Primary)
+CB <- paste0(colnames(object),"_",i)
+annotations <- Meta[CB,] 
+homotypic.prop <- modelHomotypic(annotations)           ## ex: annotations <- object@meta.data$ClusteringResults
+print("B1")
+nExp_poi <- round(0.075*nrow(object@meta.data))  ## Assuming 7.5% doublet formation rate - tailor for your dataset
+print("B2")
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+print("B")
+## Run DoubletFinder with varying classification stringencies ----------------------------------------------------------------
+resultA[[i]] <- doubletFinder_v3(object, PCs = 1:10, pN = 0.25, pK = 0.09, nExp = nExp_poi, reuse.pANN = FALSE, sct = FALSE)
+#resultB[[i]] <- doubletFinder_v3(object, PCs = 1:10, pN = 0.25, pK = 0.09, nExp = nExp_poi.adj, reuse.pANN = "pANN_0.25_0.09_913", sct = FALSE)
+}
+resultA[[i]][[]]
+saveRDS(resultA, file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.DoubletFinder.ResA.210413.rds" )
+#saveRDS(resultB, file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.DoubletFinder.ResB.210413.rds" )
+
+```
+###Where is doublet
+```{r}
+tmp = resultA[[1]][[]] %>% as_tibble(rownames = "CB") %>% dplyr::select(CB, DF.classifications_0.25_0.09_353)
+tmp$CB <- paste0(tmp$CB, "_1")
+colnames(tmp) = c("CB","DF")
+tmp2 = scBRCA1[[]] %>% as_tibble(rownames = "CB")  %>% filter(!CB %in% tmp$CB)
+tmp2$DF <- "NoData"
+tmp2 <- dplyr::select(tmp2,CB, DF)
+tmp <- rbind(tmp, tmp2)
+tmp
+tmp3 <- tmp$DF 
+names(tmp3) <- tmp$CB
+scBRCA1 <- AddMetaData(scBRCA1, metadata = tmp3, col.name = "DF")
+Idents(scBRCA1) <- scBRCA1$DF
+DimPlot(scBRCA1)
+table(scBRCA1$Identity.Primary, scBRCA1$DF)
+```
+
+##Subcluster
+###Tcell
+```{r, fig.width=10}
+Idents(scBRCA1) <- scBRCA1$Identity.Primary
+Tcell <- subset(scBRCA1, idents = "T_cell")
+DefaultAssay(Tcell) <- "integrated"
+Tcell <- FindNeighbors(Tcell, dims = 1:50)
+Tcell <- FindClusters(Tcell, resolution = 0.4)
+Tcell <- RunUMAP(Tcell, dims = 1:30, spread =1, min.dist =0.2)
+
+DefaultAssay(Tcell) <- "RNA"
+Markers.T <- FindAllMarkers(Tcell)
+Markers.T %>% group_by(cluster) %>% top_n(n=30, wt = avg_logFC)
+selected.genes = c("CD3D","CD3G","CD4",
+      "CD8A","CD8B","IL7R","GZMA","GZMK","CXCR4","CCR7",
+      "FOXP3","TIGIT","CTLA4","IL2RA","TNFRSF4","S100A4",
+      "NKG7","KLRF1","GZMB","GNLY","PRF1","CCL4","CCL5",
+      "HSPA1B","HSPA1A","TNF","SPP1","APOE",
+      "KLRC1","KLRD1","FCER1G","XCL1","XCL2",
+      "CCR7","RPL32","RPS8","RPL39","SELL",
+      "IL17F","IL17A","CCR6","CXCR6","CCL20"
+      
+)
+DotPlot(Tcell, features = unique(selected.genes)) + scale_SummaerSea2  +Dot_scale+Dot_axis90
+Idents(Tcell) <- Tcell$integrated_snn_res.0.4
+Tcell <- RenameIdents(Tcell,
+                      '0' = "T_CD8",
+                      '1' = "Treg",
+                      '2' = "NK1",
+                      '3' = "Unk2",
+                      '4' = "NK2",
+                      '5' = "T_Rps",
+                      '6' = "T_CD4"
+                      )
+
+Tcell$Identity <- factor(Idents(Tcell), levels = c("NK1","NK2","T_CD8","T_CD4","Treg","T_Rps","Unk2") )
+Idents(Tcell) <- Tcell$Identity
+DimPlot(Tcell)
+table(Tcell$Identity, Tcell$DF)
+```
+####Cluster besed QC Tcell
+
+
+```{r, fig.width=10}
+df = FetchData(Tcell, vars = c("nCount_RNA","nFeature_RNA","percent.mt","integrated_snn_res.0.5","Identity"))
+df$CG <- df$nCount_RNA/df$nFeature_RNA
+ggplot(df, aes(x= Identity, y = percent.mt )) + geom_violin(scale = "width") + geom_jitter() 
+ggplot(df, aes(x= Identity, y = nCount_RNA ))  + geom_violin(scale = "width") + geom_jitter() 
+ggplot(df, aes(x= Identity, y = nFeature_RNA ))  + geom_violin(scale = "width") + geom_jitter() 
+ggplot(df, aes(x= Identity, y = CG )) + geom_violin(scale = "width") + geom_jitter() 
+```
+###Myeloid
+```{r}
+Idents(scBRCA1) <- scBRCA1$Identity.Primary
+
+Myeloid <- subset(scBRCA1, idents = "Myeloid")
+DefaultAssay(Myeloid) <- "integrated"
+Myeloid <- FindNeighbors(Myeloid, dims = 1:50)
+Myeloid <- FindClusters(Myeloid, resolution = 0.4)
+Myeloid <- RunUMAP(Myeloid, dims = 1:30, spread =1, min.dist =0.2)
+DefaultAssay(Myeloid) <- "RNA"
+
+Markers.M <- FindAllMarkers(Myeloid) 
+Markers.M %>% group_by(cluster) %>% top_n(n=30, wt = avg_logFC)
+
+selected.genes = c("C1QA","C1Qb","CD83","CCL3","CCL4","CXCL8",
+                   "OLR1","VEGFA","CXCR4","AREG","RGCC","CCL20","CXCL10",
+                   "CD1C","CD1E","CLEC10A","HLA-DQA1","HLA-DQB1",
+                   "SPP1","APOE","LGALS1","IFI6","IFI27","IFIT1",
+                   "S100A8","S100A9","VCAN","CSF3R",
+                   "FCGR3A","	ADGRE5","LYST","ADGRE1")
+
+DotPlot(Myeloid, features = unique(selected.genes)) + scale_SummaerSea2  +Dot_scale+Dot_axis90
+
+Myeloid <- RenameIdents(Myeloid,
+                      '0' = "Mono_Complement",
+                      '1' = "Mono_VEGFA",
+                      '2' = "Mono_APC",
+                      '3' = "Mono_SPP1",
+                      '4' = "Mono_PMN-like",
+                      '5' = "TAM"
+                      )
+Myeloid$Identity <- Idents(Myeloid)
+DimPlot(Myeloid)
+table(Myeloid$Identity, Myeloid$DF)
+```
+
+```{r}
+#selected.genes = c("CD14",sort(find("FCG")), "CSF1R","CSF2RA","CSF2RB","CSF3R","ADGRE1")
+#selected.genes = sort(find("HLA-"))
+#selected.genes = c("C1QB","C1QC","CCL3","CCL4","VCAN","SPP1","VEGFA","S100A8","THBS1","LYZ")
+
+
+for(i in selected.genes ){
+      print(
+            VlnPlot(Myeloid, features = i)
+      )
+}
+for(i in selected.genes ){
+      print(
+           FeaturePlot(Myeloid, features = i )  + scale_SummaerSea2 
+      )
+}
+tmp = FindMarkers(Myeloid, ident.1 = c(0,3), ident.2 = c(1,2,4))
+tmp %>% arrange(avg_logFC)
+
+
+```
+
+##Transfer Identity
+```{r, fig.width=10}
+tmp = scBRCA1[[]] %>% as_tibble(rownames = "CB") %>% dplyr::select(CB, Identity.Primary) %>% filter(!Identity.Primary %in% c("T_cell","Myeloid"))
+colnames(tmp) = c("CB","Identity")
+tmp2 = Tcell[[]] %>% as_tibble(rownames = "CB") %>% dplyr::select(CB, Identity)
+tmp3 = Myeloid[[]] %>% as_tibble(rownames = "CB") %>% dplyr::select(CB, Identity)
+tmp = rbind(tmp,tmp2,tmp3)
+label = tmp$Identity
+names(label )=tmp$CB
+scBRCA1 <- AddMetaData(scBRCA1, metadata = label, col.name = "Identity")
+sort(levels(as.factor(scBRCA1$Identity)))
+level1 = c("cDC1","cDC2","pDC",
+           "NK1","NK2","T_CD8","T_CD4","Treg","T_Rps","T_Proliferating",
+           "Mono_Complement","Mono_VEGFA","Mono_SPP1","Mono_PMN-like","Mono_APC",
+           "TAM",
+           "B_cell","Mast_cell","Endothelial",
+           "Unk1","Unk2","LQ")
+
+scBRCA1$Identity <- factor(scBRCA1$Identity, levels = level1)
+scBRCA1$Identity.rev <- factor(scBRCA1$Identity, levels = rev(level1) )
+Idents(scBRCA1) <- scBRCA1$Identity
+DimPlot(scBRCA1, label = T)
+
+
+```
+
+##Add Identity
+```{r}
+scBRCA1$Identity_con <- paste0(scBRCA1$Identity,"_",scBRCA1$orig.ident)
+tmp = lapply(level1, function(x) paste0(x, c("_CD45","_EP4")) ) %>% unlist()
+scBRCA1$Identity_con <- factor(scBRCA1$Identity_con , levels = tmp)
+
+table(scBRCA1$Identity_con, scBRCA1$orig.ident)
+scBRCA1 <- RenameIdents(scBRCA1,
+                        'cDC1' = "DC",
+                        'cDC2' = "DC",
+                        "pDC" = "DC",
+                        "NK1" = "NK",
+                        "NK2" = "NK",
+                        "T_CD8" = "T_cell",
+                        "T_CD4" = "T_cell",
+                        "Treg" = "T_cell",
+                        "T_Rps" = "T_cell",
+                        "T_Proliferating" = "T_cell",
+                        "Mono_Complement" = "Mono",
+                        "Mono_VEGFA" = "Mono",
+                        "Mono_APC" = "Mono",
+                        "Mono_SPP1" = "Mono",
+                        "Mono_PMN-like" = "Mono",
+                        "TAM" = "TAM",
+                        "B_cell" = "B_cell",
+                        "Mast_cell" = "Other",
+                        "Endothelial" = "Other",
+                        "Unk1" = "LQ",
+                        "Unk2" = "LQ",
+                        "LQ" = "LQ"
+                        )
+DimPlot(scBRCA1)
+scBRCA1$Identity.reduce <- Idents(scBRCA1)
+level2 = c("DC","NK","T_cell","Mono","TAM","B_cell","Other")
+scBRCA1[[]]
+```
+
+##Cluster-based QC
+```{r,fig.width=12}
+QC <- FetchData(scBRCA1, vars = c("percent.mt","nCount_RNA","nFeature_RNA","Identity","orig.ident") ) %>% as_tibble(rownames = "CB")
+colnames(QC) <- c("CB","MT","Count","Gene","Cluster","Sample")
+QC$CG <- QC$Count/QC$Gene
+  print( ggplot(QC, aes(x = Cluster, y = MT,color = Sample) ) + geom_jitter() +Dot_axis90 ) + ylim(0,20) + geom_hline(yintercept = 10) 
+  ggplot(QC, aes(x = Cluster, y = Count,color = Sample) ) + geom_jitter() +Dot_axis90  + ylim(0,20000) + geom_hline(yintercept = 1500) 
+  print( ggplot(QC, aes(x = Cluster, y = Gene,color = Sample) ) + geom_jitter() +Dot_axis90)
+  print( ggplot(QC, aes(x = Cluster, y = CG) ) + geom_jitter()  + geom_hline(yintercept = 1) +Dot_axis90 )
+  
+  
+MT.genes = find("MT-")%>% sort()
+RPS.genes = find("^RPS")%>% sort()
+RPL.genes = find("^RPL")%>% sort()
+COL.genes = find("^COL") %>% sort()
+HLA.genes = find("^HLA-") %>% sort()
+KRT.genes = find("^KRT") %>% sort()
+QC.genes = c(MT.genes[1:8],RPS.genes[1:8], RPL.genes[1:8])
+QC.genes2 = c("CD3D","CD3E","CD68","CD163","IGKC")
+
+tmp =AverageExpression(scBRCA1, assays = "RNA")$RNA
+tmp <- tmp %>% arrange(desc(CD45))
+QC.genes3 = setdiff(rownames(tmp),c(MT.genes,RPS.genes,RPL.genes) )[1:20]
+QC.genes4 = c("CD3D","CD3E","CD3G","NCAM1","NCR1","NCR3","CST3","DCN","KIT","HDC","S100A8","S100A9","APOE")
+
+Idents(scBRCA1) <- scBRCA1$Identity
+DotPlot(scBRCA1, features = QC.genes) + scale_SummaerSea2+Dot_axis90 + Dot_scale2
+DotPlot(scBRCA1, features = COL.genes) + scale_SummaerSea2+Dot_axis90 + Dot_scale2
+DotPlot(scBRCA1, features = HLA.genes) + scale_SummaerSea2+Dot_axis90 + Dot_scale2
+DotPlot(scBRCA1, features = KRT.genes) + scale_SummaerSea2+Dot_axis90 + Dot_scale2
+DotPlot(scBRCA1, features = QC.genes2) + scale_SummaerSea2+Dot_axis90 + Dot_scale2
+DotPlot(scBRCA1, features = QC.genes4) + scale_SummaerSea2+Dot_axis90 + Dot_scale2
+```
+
+
+##Reshape
+
+
+
+```{r}
+DefaultAssay(scBRCA1) <- "integrated"
+scBRCA1 <- RunUMAP(scBRCA1, dims = 1:30, spread =1, min.dist = 1 )
+saveRDS(scBRCA1, file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.210419.rds" )
+
+
+Idents(scBRCA1) <- scBRCA1$Identity
+level1[1:19]
+scBRCA1 <- subset(scBRCA1, idents = level1[1:19])
+DefaultAssay(scBRCA1) <- "integrated"
+scBRCA1 <- RunUMAP(scBRCA1, dims = 1:30, spread =1, min.dist = 1 )
+saveRDS(scBRCA1, file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.RemoveLQUnk.210419.rds" )
+
+DimPlot(scBRCA1)
+
+col.Identity = list(
+ "DC" =  c("#296EB4","#14248a","#540d6e"),
+ "NK" = c("#7EA172","#c7cb85"),
+ "T" = c("#3B5249","#519872","#168aad","#b5e48c","#168aad"),
+ "Mono" = c("#f48c06","#dc2f02","#8367c7","#ffba08","#b56576"),
+ "TAM" = c("#6a040f"),
+ "B" =  c("#D84797"),
+ "Other" = c("#9f7e69","#e71d36")
+) %>% unlist() %>% as.vector()
+col.Identity.reduce = c("#296EB4","#7EA172","#3B5249","#f48c06","#6a040f","#D84797","#9f7e69")
+level2
+
+Idents(scBRCA1) = scBRCA1$Identity.reduce
+Idents(scBRCA1) = scBRCA1$Identity
+plot = DimPlot(scBRCA1, label =F, cols = col.Identity, repel =T, pt.size = 1) + 
+  theme(legend.position = "bottom")
+
+for(i in 1 ){
+  png(filename = "UMAPA2.png", width = 7, height =7.5, units = "in",res=200)
+  print(plot)
+  dev.off()
+}
+
+plot
+```
+
+
+#Average expression
+```{r}
+Idents(scBRCA1) <- scBRCA1$Identity_con
+Avg <- AverageExpression(scBRCA1)
+
+tmp = Avg$RNA[,intersect(levels(scBRCA1$Identity_con),colnames(Avg$RNA) )]
+write.csv(tmp, file = "/home/siwakorn/BRCA/Fig/210419_summary/scBRCA1.AverageExpression.210420.csv")
+
+saveRDS(Avg, file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.Identity.con.AverageExpression.210414.rds" )
+```
+
+##Gene Indexing
+```{r}
+Markers.list = list(
+      "DC1" = c("CLEC9A","BATF3","XCR1"),
+      "DC2" = c("CD1E","CD1A","HLA-DQA2","HLA-DQB2","CD207"),
+      "pDC" = c("LILRA4","IRF7","CLEC4C","IRF8"),
+      "NK" = c("NCAM1","NCR1","NCR3"),
+      "NK1" = c("KLRF1","GZMB","GNLY","PRF1","CCL4","CCL5","IFNG"),
+      "NK2" = c("KLRC1","KLRD1","FCER1G","XCL1","XCL2"),
+      "T" = c("CD3D","CD3E","CD3G","CD4","CD8A","CD8B"),
+      "CD8" = c("IL7R","GZMA","GZMK","CXCR4","CCR7"),
+      "CD4" = c("IL17F","IL17A","CCR6","CXCR6","CCL20"),
+      "Treg" = c("FOXP3","TIGIT","CTLA4","IL2RA","TNFRSF4","S100A4"),
+      "T_Rps" = c("CCR7","RPL32","RPS8","RPL39","SELL"),
+      "T_Pro" = c("MKI67","CDK1"),
+      "PAN-Myeloid" = c("CSF1R","CD14","FCGR3A","CSF3R","ADGRE1"),
+      "Mono1" = c("C1QA","C1QB","CD83","CCL3","CCL4","CXCL8"),
+      "Mono2" = c("OLR1","VEGFA","CXCR4","AREG","RGCC","CCL20","CXCL10"),
+      "Mono4" = c("SPP1","APOE","LGALS1","IFI6","IFI27","IFIT1"),
+      "Mono5" = c("S100A8","S100A9","VCAN","CSF3R"),
+      "Mono3" = c("CD1C","CD1E","CLEC10A","HLA-DQA1","HLA-DQB1"),
+      "TAM" = c("FCGR3A","ADGRE5","LYST"),
+      "B" = c("IGHM","CD79A","IGHD"),
+      "Mast" = c("TPSB2","KIT","HDC","CSF1"),
+      "Endo" = c("VWF","COL4A1","PECAM1") )
+      "Unk1" = c("AL022069.1","AC087239.1","HSPA2","PLK2"),
+      "Unk2" = c("HSPA1B","HSPA1A","TNF","SPP1","APOE"),
+      "Other" = c("S100A14","KRT8","KRT18","KRT19","PTGS1","PTGS2","PTGER2","PTGER4")
+)
+
+GeneIndex = c()
+
+for(i in names(Markers.list)){
+      tmp = rep(i, length(Markers.list[[i]] ))
+      names(tmp) = Markers.list[[i]]
+      GeneIndex  <- c(GeneIndex ,tmp)
+}
+```
+
+
+##Signature plot
+```{r, fig.width=10}
+
+selected.genes <- unlist(Markers.list)
+Idents(scBRCA1) <- scBRCA1$Identity.rev
+for(i in 1){
+      png(filename = "DotPlot.SignatureGene.210417.png", width = 20, height = 8,units = "in", res =200)
+      print(
+            DotPlot(scBRCA1, features = unique(selected.genes) ) + scale_SummaerSea2  +Dot_scale+Dot_axis90 +
+                  theme(legend.position = "bottom")
+      )
+      dev.off()
+}
+
+myeloid.genes = c("CSF1R","CSF2R","CSF3R","CD14",sort(find("FCG")),sort(find("FCER")), sort(find("ADGRE")) )
+myeloid.genes = c("CSF1R","CD14","FCGR3A","CSF3R","ADGRE1")
+myeloid.genes = c("VCAN","FN1","SPP1","INHBA","VEGFA")
+selected.genes = myeloid.genes
+VlnPlot(scBRCA1, features = "IFNG")
+DotPlot(scBRCA1, features = unique(selected.genes)) + scale_SummaerSea2  +Dot_scale+Dot_axis90
+
+saveRDS(scBRCA1, file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.DecontXNativeFilterd.Count500Mt10.Identity.210413.rds" )
+
+AllMarkers <- readRDS(file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/AllMarkers.scBRCA1.DecontXNativeFilterd.Count500Mt10.Identity.210413.rds")
+AllMarkers %>% group_by(cluster) %>% top_n(n=50, wt=avg_logFC) %>% filter(cluster == "pDC")
+```
+
+
+```{r}
+GeneIndex = c()
+for(i in names(Markers.list)){
+      tmp = rep(i, length(Markers.list[[i]] ))
+      names(tmp) = Markers.list[[i]]
+      GeneIndex  <- c(GeneIndex ,tmp)
+}
+```
+
+#AllMarkers
+```{r}
+object <- readRDS("/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.210419.rds")
+DefaultAssay(object) <- "RNA"
+object <- NormalizeData(object)
+tmp =FindAllMarkers(object)
+#saveRDS(tmp, file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/AllMarkers.scBRCA1.210419.rds")
+AllMarkers <- readRDS(file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/AllMarkers.scBRCA1.210419.rds" )
+tmp = AllMarkers %>% group_by(cluster) %>% top_n(n=100, wt =avg_logFC)
+write.csv(tmp, file = "/home/siwakorn/BRCA/Fig/210419_summary/scBRCA1.Markers.210420,csv")
+for(i in level1){
+      tmp = filter(AllMarkers, cluster == i) %>% filter(p_val < 0.05) %>% arrange(desc(avg_logFC))
+      write.csv(tmp, file = paste0("/home/siwakorn/BRCA/Fig/210419_summary/scBRCA1.Identity.",i,".csv") )
+}
+```
+
+
+#Characterization
+##Dotplot Signature gene 
+```{r}
+Idents(scBRCA1) <- scBRCA1$Identity.rev
+df = DotPlot(scBRCA1, features = unique(unlist(Markers.list)))$data
+
+colnames(df)[grep("id",colnames(df))] <- "Identity"
+df
+df$GeneGroup = lapply(as.character(df$features.plot), function(x) GeneIndex[x]  ) %>% unlist()
+df$GeneGroup = factor(df$GeneGroup, levels = names(Markers.list) )
+
+df$Exp.round <- round(df$avg.exp,2)
+
+
+plot = ggplot(df, aes(x=features.plot, y =Identity,size = pct.exp, color = avg.exp.scaled) ) + 
+      geom_point() + 
+      #geom_text(aes(label= Exp.round, y= Condition , x= features.plot), size=3,fontface="bold", colour = "black") +
+      scale_SummaerSea2 + # scale_SummaerSea = scale_color_gradientn(colours = c("#173F5F","#20639B","#3CAEA3","#F6D55C","#ED553B")) 
+      Dot_scale +         # scale_size(range = c(1.5,8),name = "Percent Expression") 
+      #scale_size(c(10,20,40,60,80,100),range = c(0,10),name = "Percent\nExpressing Cell") +
+      theme_classic()+ 
+      facet_grid(. ~ GeneGroup , scales = "free", space="free", switch = "y") +
+      theme(plot.title = element_text(size = 15, face = "bold"),
+            axis.title = element_text(size = 12),
+            axis.text = element_text(color = "black"),
+            axis.text.x = element_text(angle = 90, hjust =1, vjust = 0.3, size =18, face = "bold"),
+            axis.text.y = element_text(angle = 0, hjust =1,size =18, face = "bold"),
+            strip.text.y.left = element_text(angle = 0),
+            strip.text.x = element_text(size = 14, face = "bold"),
+            legend.position = "bottom",
+            strip.placement = "outside"
+            ) +
+      labs(title = "scBRCA1 : Signature gene change between condition",
+           y = "Cluster - Sample",
+           x = "Signature Gene"
+           ) +
+      guides(colour = guide_colorbar("Scale\nExpression",
+                                     label.hjust = 0.5, 
+                                     title.theme = element_text(size =12), 
+                                     label.theme = element_text(size = 8) ),
+             size = guide_legend("Percent\nExpression", 
+                                 label.hjust = 0.5, 
+                                 title.theme = element_text(size =12), 
+                                 label.theme = element_text(size = 8) )        
+             )
+for(i in 1){
+      png(filename="scBRCA1.DotPlot.Signature.png", width = 28, height =9, units ="in", res = 400)
+      print(plot)
+      dev.off()
+}
+
+
+
+```
+
+##Dotplot Signature gene comparison 2 condition
+```{r}
+Idents(scBRCA1) <- scBRCA1$Identity_con
+df = DotPlot(scBRCA1, features = unique(unlist(Markers.list)))$data
+
+#Conversion
+tmp = rep("-",nrow(df))
+tmp[grep("CD45",df$id)] <- "CD45"
+tmp[grep("EP4",df$id)] <- "EP4"
+df$Condition <- factor(tmp, levels = rev(c("CD45","EP4")) )
+
+tmp = df$id
+tmp = gsub("_CD45","",tmp)
+tmp = gsub("_EP4","",tmp)
+df$Identity <- factor(tmp, levels = level1 )
+
+df$GeneGroup = lapply(as.character(df$features.plot), function(x) GeneIndex[x]  ) %>% unlist()
+df$GeneGroup = factor(df$GeneGroup, levels = names(Markers.list) )
+
+df$Exp.round <- round(df$avg.exp,2)
+
+
+plot = ggplot(df, aes(x=features.plot, y =Condition,size = pct.exp, color = avg.exp.scaled) ) + 
+      geom_point() + 
+      #geom_text(aes(label= Exp.round, y= Condition , x= features.plot), size=3,fontface="bold", colour = "black") +
+      scale_SummaerSea2 + # scale_SummaerSea = scale_color_gradientn(colours = c("#173F5F","#20639B","#3CAEA3","#F6D55C","#ED553B")) 
+      Dot_scale +         # scale_size(range = c(1.5,8),name = "Percent Expression") 
+      #scale_size(c(10,20,40,60,80,100),range = c(0,10),name = "Percent\nExpressing Cell") +
+      theme_classic()+ 
+      facet_grid(Identity ~ GeneGroup , scales = "free", space="free", switch = "y") +
+      theme(plot.title = element_text(size = 15, face = "bold"),
+            axis.title = element_text(size = 12),
+            axis.text = element_text(color = "black"),
+            axis.text.x = element_text(angle = 90, hjust =1, vjust = 0.3),
+            axis.text.y = element_text(angle = 0, hjust =1),
+            strip.text.y.left = element_text(angle = 0),
+            legend.position = "bottom",
+            strip.placement = "outside"
+            ) +
+      labs(title = "scBRCA1 : Signature gene change between condition",
+           y = "Cluster - Sample",
+           x = "Signature Gene"
+           ) +
+      guides(colour = guide_colorbar("Scale\nExpression",
+                                     label.hjust = 0.5, 
+                                     title.theme = element_text(size =12), 
+                                     label.theme = element_text(size = 8) ),
+             size = guide_legend("Percent\nExpression", 
+                                 label.hjust = 0.5, 
+                                 title.theme = element_text(size =12), 
+                                 label.theme = element_text(size = 8) )        
+             )
+for(i in 1){
+      png(filename="scBRCA1.DotPlot.SignatureChange.png", width = 28, height =16, units ="in", res = 200)
+      print(plot)
+      dev.off()
+}
+
+```
+
+#---Analysis---
+##UMAP
+```{r}
+Idents(scBRCA1) <- scBRCA1$Identity
+for(i in 1){
+      png(filename=fig("scBRCA1.UMAP1"), width = 6, height =6, units ="in", res = 200)
+      print(
+            DimPlot(scBRCA1, label = T, repel =T) +  NoLegend()
+      )
+      dev.off()
+}
+```
+
+##EP4 sorting enrichment
+```{r}
+num = table(scBRCA1$Identity, scBRCA1$orig.ident) %>% as.matrix()
+pc = apply(num, 1, function(x) x/colSums(num)*100) %>% t() %>% as.data.frame() %>% as_tibble(rownames = "Identity")
+pc$Change <- (pc$EP4 - pc$CD45 ) /pc$CD45*100 %>% round(digits = 3)
+pc$Change <-  round(pc$Change, digits = 2)
+pc$position <- pc$Change
+pc$position[pc$position > 0] <- pc$position[pc$position > 0]  + 2
+pc$position[pc$position < 0] <- 0.5
+pc
+pc$Identity <- factor(pc$Identity, levels = level1)
+plot = ggplot(pc, aes(x= Identity, y =Change ))+
+      geom_col()+
+      geom_text(aes(x=Identity, y = position, label =Change ), angle = 90, hjust = -1)+
+      theme_classic()+
+      theme(axis.text = element_text(color= "black"),
+            axis.text.x = element_text(angle = 90, vjust = 0.3, hjust =1),
+            axis.title.x = element_blank()
+            )
+num2
+num2 = num %>% as.data.frame() %>% spread(Var2,Freq)
+
+write.csv(num2, file = "/home/siwakorn/BRCA/Fig/210413_Identity/scBRCA1.EP4sorting.Enrichment.210414.csv" )
+for(i in 1){
+      png(filename=fig("scBRCA1.EP4sorting.Enrichment"), width = 8, height =5, units ="in", res = 200)
+      print(plot)
+      dev.off()
+}
+```
+
+##DE EP4-CD45 sample
+```{r}
+DE.list <- list()
+Idents(scBRCA1) <- scBRCA1$Identity
+for(i in levels(Idents(scBRCA1))){
+      tryCatch({
+            tmp = subset(scBRCA1, idents = i )
+            Idents(tmp) <- tmp$orig.ident
+            levels(as.factor(scBRCA1$orig.ident ))
+            DE.list[[i]] = FindMarkers(tmp, ident.1 = "EP4", ident.2 = "CD45", logfc.threshold = 0.01)
+      },
+      error = function(e){print(e)}
+      )
+}
+
+#saveRDS(DE.list, file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.DecontXNativeFilterd.Count500Mt10.Identity.210413.DElist.EP4xCD5.rds" )
+DE.list <- readRDS(file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.DecontXNativeFilterd.Count500Mt10.Identity.210413.DElist.EP4xCD5.rds" )
+for(i in 1:length(DE.list)){
+      DE.list[[i]] <- DE.list[[i]] %>% as_tibble(rownames = "Gene")
+      DE.list[[i]]$Cluster <- names(DE.list)[i]
+      DE.list[[i]] <- filter(DE.list[[i]], p_val < 0.05)
+      write.csv(DE.list[[i]], file = paste0("/home/siwakorn/BRCA/Fig/210413_Identity/DE.EP4xCD45.",names(DE.list)[i],".210414.csv") )
+}
+```
+
+##Re-Validate signature of EP4 sample
+```{r}
+Idents(scBRCA1) <- scBRCA1$orig.ident
+EP4 <- subset(scBRCA1, idents = "EP4")
+Idents(EP4) <- EP4$Identity
+DimPlot(EP4)
+DefaultAssay(EP4) <- "integrated"
+EP4 <- RunUMAP(EP4, dims = 1:30, spread =1 , min.dist = 0.5)
+EP4 <- FindNeighbors(EP4, dims = 1:30)
+EP4 <- FindClusters(EP4, resolution = 0.5)
+DefaultAssay(EP4) <- "RNA"
+Markers.EP4 <- FindAllMarkers(EP4)
+Markers.EP4 %>% group_by(cluster) %>% top_n(n =30 , wt = avg_logFC)
+```
+
+##PTG gene expression Dotplot2X
+```{r}
+Idents(scBRCA1) <- scBRCA1$Identity_con
+sort(find("PTG"))
+PG.genes = c("PTGES","PTGES2","PTGES3","PTGS1","PTGS2","PTGDS","PTGER1","PTGER2","PTGER3","PTGER4","PTGDR","PTGDR2")
+df = DotPlot(scBRCA1, features = PG.genes )$data
+df
+#Conversion
+tmp = rep("-",nrow(df))
+tmp[grep("CD45",df$id)] <- "CD45"
+tmp[grep("EP4",df$id)] <- "EP4"
+df$Condition <- factor(tmp, levels = c("CD45","EP4") )
+
+tmp = df$id
+tmp = gsub("_CD45","",tmp)
+tmp = gsub("_EP4","",tmp)
+df$Identity <- factor(tmp, levels = level1 )
+
+df$Exp.round <- round(df$avg.exp,2)
+
+df
+
+plot = ggplot(df, aes(y=features.plot, x =Condition,size = pct.exp, color = avg.exp.scaled) ) + 
+      geom_point() + 
+      #geom_text(aes(label= Exp.round, y= Condition , x= features.plot), size=3,fontface="bold", colour = "black") +
+      scale_SummaerSea2 + # scale_SummaerSea = scale_color_gradientn(colours = c("#173F5F","#20639B","#3CAEA3","#F6D55C","#ED553B")) 
+      Dot_scale +         # scale_size(range = c(1.5,8),name = "Percent Expression") 
+      #scale_size(c(10,20,40,60,80,100),range = c(0,10),name = "Percent\nExpressing Cell") +
+      theme_classic()+ 
+      facet_grid(. ~ Identity , scales = "free", space="free", switch = "y") +
+      theme(plot.title = element_text(size = 15, face = "bold"),
+            axis.title = element_text(size = 12),
+            axis.text = element_text(color = "black"),
+            axis.text.x = element_text(angle = 90, hjust =1, vjust = 0.3),
+            axis.text.y = element_text(angle = 0, hjust =1),
+            strip.text.y.left = element_text(angle = 0),
+            legend.position = "bottom",
+            strip.placement = "outside"
+            ) +
+      labs(title = "scBRCA1 : Signature gene change between condition",
+           y = "Cluster - Sample",
+           x = "Signature Gene"
+           ) +
+      guides(colour = guide_colorbar("Scale\nExpression",
+                                     label.hjust = 0.5, 
+                                     title.theme = element_text(size =12), 
+                                     label.theme = element_text(size = 8) ),
+             size = guide_legend("Percent\nExpression", 
+                                 label.hjust = 0.5, 
+                                 title.theme = element_text(size =12), 
+                                 label.theme = element_text(size = 8) )        
+             )
+for(i in 1){
+      png(filename="scBRCA1.DotPlot.PGGenes2.png", width = 10, height =6, units ="in", res = 200)
+      print(plot)
+      dev.off()
+}
+
+```
+
+##Rainbow Heatmap Angiogenesis+NFKB
+```{r}
+selected.genes = c("IL1B","PTGS2","VEGFA","HIF1A","CXCL2","OSM","NR4A1","CXCR4","TNFAIP2","NFKB1","NFKB2","NFKBIA","NFKBID","NFKBIL1","NFKBIZ","RELA","RELB","PTGER2","PTGER4")
+Idents(scBRCA1) <- scBRCA1$Identity_con
+DefaultAssay(scBRCA1) <- "RNA"
+df = DotPlot(scBRCA1, features = selected.genes )$data
+
+#Conversion
+tmp = rep("-",nrow(df))
+tmp[grep("CD45",df$id)] <- "CD45"
+tmp[grep("EP4",df$id)] <- "EP4"
+df$Condition <- factor(tmp, levels = rev(c("CD45","EP4")) )
+
+tmp = df$id
+tmp = gsub("_CD45","",tmp)
+tmp = gsub("_EP4","",tmp)
+df$Identity <- factor(tmp, levels = level1 )
+
+df$Exp.round <- round(df$avg.exp,2)
+
+df$features.plot <- factor(df$features.plot, levels = rev(selected.genes))
+df$Condition <- factor(df$Condition, levels = c("CD45","EP4"))
+
+plot = ggplot(df, aes(y=features.plot, x =Condition,size = pct.exp, color = avg.exp.scaled) ) + 
+      geom_point() + 
+      geom_text(aes(label= Exp.round, x= Condition , y= features.plot), size=3,fontface="bold", colour = "black") +
+      #scale_SummaerSea2 + # scale_SummaerSea = scale_color_gradientn(colours = c("#173F5F","#20639B","#3CAEA3","#F6D55C","#ED553B")) 
+      scale_RedGreen +
+      #Dot_scale +         # scale_size(range = c(1.5,8),name = "Percent Expression") 
+      scale_size(c(10,20,40,60,80,100),range = c(0,12),name = "Percent\nExpressing Cell") +
+      theme_classic()+ 
+      facet_grid(. ~ Identity, scales = "free", space="free", switch = "y") +
+      theme(plot.title = element_text(size = 15, face = "bold"),
+            axis.title = element_text(size = 12),
+            axis.text = element_text(color = "black"),
+            axis.text.x = element_text(angle = 90, hjust =1, vjust = 0.3),
+            axis.text.y = element_text(angle = 0, hjust =1),
+            strip.text.y.left = element_text(angle = 0),
+            strip.text.x = element_text(angle=90),
+            legend.position = "bottom",
+            strip.placement = "outside"
+            ) +
+      labs(title = "scBRCA1 : Angiogenesis - NFkB gene change between condition",
+           y = "Angiogenesis - NFkB",
+           x = "Cluster - Sample"
+           ) +
+      guides(colour = guide_colorbar("Scale\nExpression",
+                                     label.hjust = 0.5, 
+                                     title.theme = element_text(size =12), 
+                                     label.theme = element_text(size = 8) ),
+             size = guide_legend("Percent\nExpression", 
+                                 label.hjust = 0.5, 
+                                 title.theme = element_text(size =12), 
+                                 label.theme = element_text(size = 8) )        
+             )
+for(i in 1){
+      png(filename="/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/Fig/210419_summary/scBRCA1.AngiogenesisNFkB.png", width = 20, height =11, units ="in", res = 300)
+      print(plot)
+      dev.off()
+}
+```
+
+##ViolinPlot
+```{r}
+for(i in selected.genes){
+  png(file = fig(paste0("VP.",i)), width = 8, height = 4, units ="in",res=200)
+  print(
+    VlnPlot(scBRCA1, features = i, pt.size =0.6) + NoLegend()
+  )
+  dev.off()
+
+}
+
+
+```
+
+##GO term
+```{r}
+library(org.Hs.eg.db)
+
+library(clusterProfiler)
+DE.list <- readRDS(file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.DecontXNativeFilterd.Count500Mt10.Identity.210413.DElist.EP4xCD5.rds" )
+selected.cluster =c("cDC2","Treg","Mono_Complement","Mono_VEGFA", "Mono_APC","Mono_SPP1", "Mono_PMN-like")
+
+GO.UP.list <- list()
+GO.DOWN.list <- list()
+DOWNregulated.list <- list()
+UPregulated.list <- list()
+
+intersect(names(DE.list), selected.cluster)
+pcutoff = 0.05
+for(i in selected.cluster){
+  tryCatch({
+      print(i)
+      up   = DE.list[[i]] %>% dplyr::filter(p_val < pcutoff) %>% filter(avg_logFC > 0.1 )
+      GO.UP  <- enrichGO(gene  = rownames(up),
+                         OrgDb         = org.Hs.eg.db,
+                      keyType       = 'SYMBOL',
+                      ont           = "BP",
+                      universe = rownames(scBRCA1),
+                      pAdjustMethod = "BH",
+                      pvalueCutoff  = 0.05,
+                      qvalueCutoff  = 0.05)
+      },
+      error = function(e){print(paste0("Error : " ,i))})
+  tryCatch({
+      print(i)
+        down = DE.list[[i]] %>% filter(p_val < pcutoff) %>% filter(avg_logFC < -0.1 )
+      GO.DOWN  <- enrichGO(gene  = rownames(down),
+                           OrgDb         = org.Hs.eg.db,
+                           keyType       = 'SYMBOL',
+                           ont           = "BP",
+                           universe = rownames(scBRCA1),
+                           pAdjustMethod = "BH",
+                           pvalueCutoff  = 0.05,
+                           qvalueCutoff  = 0.05)
+      },
+      error = function(e){print(paste0("Error : " ,i ))})
+  GO.UP.list[[i]] <- GO.UP
+  GO.DOWN.list[[i]] <- GO.DOWN
+  UPregulated.list[[i]] <- up
+  DOWNregulated.list[[i]] <- down
+}
+GO.UP.list 
+DE.list[[1]] %>% dplyr::filter(p_val < pcutoff) %>% filter(avg_logFC > 0.1 )
+[[3]] %>% as.data.frame()
+
+```
+
+
+#Identity
+```{r}
+scBRCA1 <- RenameIdents(scBRCA1, 
+                        '0' = "T_cell",
+                        '1' = "T_cell",
+                        '2' = "Myeloid",
+                        '3' = "T_cell",
+                        '4' = "Myeloid",
+                        '5' = "Myeloid",
+                        '6' = "Myeloid",
+                        '7' = "Myeloid",
+                        '8' = "T_cell",
+                        '9' = "T_cell",
+                        '10' = "Mast_cell",
+                        '11' = "Myeloid",
+                        '12' = "T_cell",
+                        '13' = "T_cell",
+                        '14' = "cDC2",
+                        '15' = "T_cell",
+                        '16' = "cDC1",
+                        '17' = "B_cell",
+                        '18' = "Endothelial",
+                        '19' = "T_cell",
+                        '20' = "pDC",
+                        '21' = "LQ",
+                        '22' = "Epithelial"
+                        )
+scBRCA1$Identity.primary <- Idents(scBRCA1)
+DimPlot(scBRCA1X, label =T)
+col.Identity.Primary = c("#00A6A6","#f49f0a","#457B9D","#1D3557","#C62E65","#9300b3","#806D40","#FE4A49","#FED766","#E6E6EA")
+```
+
+```{r}
+Idents(scBRCA1) <- scBRCA1$DecontX
+levels(as.factor(scBRCA1$DecontX))
+scBRCA1X <- subset(scBRCA1, idents = c("No","NaiveFiltered"))
+Idents(scBRCA1X) <- scBRCA1X$Identity.primary
+```
+
+```{r}
+DefaultAssay(scBRCA1X) <- "integrated"
+scBRCA1X <- RunUMAP(scBRCA1X, dims =1:30, spread = 1, min.dist = 0.5)
+DimPlot(scBRCA1X,label = T)
+saveRDS(scBRCA1X, file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.Integration.3DeconxCondition.210406.RemoveDecont500Mt10.rds")
+
+DefaultAssay(scBRCA1X) <- "RNA"
+Markers <- FindAllMarkers(scBRCA1X)
+Markers  %>% group_by(cluster) %>% top_n(n=30, wt =avg_logFC)
+#saveRDS(Markers, file = "/home/siwakorn/BRCA/RDS/scBRCA1.Integration.3DeconxCondition.210406.RemoveDecont500Mt10.Markers.Identity.primary.rds")
+selected.genes = c("CD3D","CD3G","CCL5","GZMA","NKG7","CD14","LYZ","S100A9","C1QC","IL1B",
+                   "CLEC9A","BATF3","XCR1","IRF8","CD1E","CD1A","HLA-DQA2","HLA-DQB2","CD207",
+                   "LILRA4","IRF7","CLEC4C",
+                   "IGHM","CD79A","IGHD",
+                   "TPSB2","KIT","HDC","CSF1",
+                   "VWF","COL4A1","PECAM1",
+                   "S100A14","KRT8","KRT18","KRT19",
+                   "AL022069.1","AC087239.1","HSPA2","PLK2")
+                   "PTGS1","PTGS2","PTGER2","PTGER4")
+sort(levels(scBRCA1X$Identity.primary))
+tmp = c("T_cell","Myeloid","cDC1","cDC2","pDC","B_cell","Mast_cell","Endothelial","Epithelial","LQ")
+scBRCA1X$Identity.primary = factor(scBRCA1X$Identity.primary, levels = tmp)
+scBRCA1X$Identity.primary.rev = factor(scBRCA1X$Identity.primary, levels = rev(tmp) )
+Idents(scBRCA1X) <- scBRCA1X$Identity.primary.rev
+DefaultAssay(scBRCA1X)
+
+Idents(scBRCA1X) <- scBRCA1X$Identity.primary
+for(i in 1){
+      png(filename = "/home/siwakorn/BRCA/Fig/210407_IdentityPrimary_DecontXComparison/scBRCA1.Identity.Primary.DM.210407.png", width = 6, height = 6,units = "in", res =200)
+      print(
+            DimPlot(scBRCA1X, label = T, cols = col.Identity.Primary, repel = T)   + NoLegend()
+      )
+      dev.off()
+}
+Idents(scBRCA1X) <- scBRCA1X$Identity.primary.rev
+scBRCA1X2 <- subset(scBRCA1X, idents = setdiff(levels(Idents(scBRCA1X)), "LQ" ) )
+Idents(scBRCA1X2) <- scBRCA1X2$Identity.primary.rev
+for(i in 1){
+      png(filename = "/home/siwakorn/BRCA/Fig/210407_IdentityPrimary_DecontXComparison/scBRCA1.Identity.Primary.Dotplot.210407.png", width = 14, height = 7,units = "in", res =200)
+      print(
+            DotPlot(scBRCA1X, features = selected.genes) + scale_SummaerSea2  +Dot_scale+Dot_axis90
+      )
+      dev.off()
+}
+
+m=1
+for(i in selected.genes){
+       png(filename = paste0("/home/siwakorn/BRCA/Fig/210407_IdentityPrimary_DecontXComparison/scBRCA1.Identity.Primary.FP.",m,".",i,".210407.png"), 
+           width = 6, 
+           height = 6,units = "in", res =200)
+      print(FeaturePlot(scBRCA1X, features = i, ) + scale_SummaerSea2  +Dot_scale+Dot_axis90 )
+      dev.off()
+      m=m+1
+}
+```
+
+
+
+#Compare DecontX result
+```{r}
+Tcell <- subset(scBRCA1X, idents = "T_cell")
+Idents(Tcell) <- Tcell$orig.ident
+levels(Idents(Tcell))
+Tcell2 <- subset(Tcell, idents = "CD45" )
+Idents(Tcell2) <- Tcell2$DecontX
+levels(Idents(Tcell2))
+DE1 <- FindMarkers(Tcell2, ident.1 = "No", ident.2 = "NaiveFiltered", logfc.threshold = 0.01)
+DE1 <- arrange(DE1, desc(avg_logFC))
+DE1$used <- c(rep("Label",10),rep("Unlabel",nrow(DE1)-20), rep("Label",10) )
+DE1$logPvalue = (-1)*log(DE1$p_val,base=1000)
+tmp = as_tibble(DE1, rownames = "Gene")
+ 
+ for(i in 1){
+    png(filename = fig(paste0("Volcano.Tcell.None-NaiveFiltered.log1000.")), width = 7, height = 8, units="in",res=200)
+    border = max(tmp$avg_logFC,-(min(tmp$avg_logFC)) )
+    print(
+      ggplot(tmp, aes(x = avg_logFC, y = logPvalue, color = used, size = used )) + 
+        geom_point() +
+        scale_color_manual(values = c("firebrick2","black"))+ #select gray65 or black
+        scale_size_manual(values = c( 1.5, 0.75) ) +
+        theme_linedraw(base_size = 40)+
+        theme(text=element_text(size = 12))+
+        geom_vline(xintercept = c(-0.3,0.3)) +
+        geom_hline(yintercept = c(2)) +
+        xlim(-border,border) +
+        ylab("- log1000(p-value)") +
+        geom_text_repel(size =6,fontface ="bold", data = subset(tmp, used == "Label"),aes(label = Gene, hjust = 1.2)) +
+        NoLegend()
+      )
+  dev.off()
+ }
+table(scBRCA1$orig.ident, scBRCA1$DecontX)
+```
+
+
+```{r}
+Idents(scBRCA1X) <- scBRCA1X$Identity.primary
+cDC2 <- subset(scBRCA1X, idents = "cDC2")
+Idents(cDC2) <- cDC2$orig.ident
+cDC2 <- subset(cDC2, idents = "CD45")
+
+Idents(cDC2) <- cDC2$DecontX
+levels(Idents(cDC2))
+DE2 <- FindMarkers(cDC2, ident.1 = "No", ident.2 = "NaiveFiltered", logfc.threshold = 0.01)
+DE2 <- DE2 %>% arrange(desc(avg_logFC))
+DE2$used <- c(rep("Label",10),rep("Unlabel",nrow(DE2)-20), rep("Label",10) )
+DE2$logPvalue = (-1)*log(DE2$p_val,base=10)
+tmp = as_tibble(DE2, rownames = "Gene")
+tmp
+
+ for(i in 1){
+    png(filename = fig(paste0("Volcano.cDC2.None-NaiveFiltered.")), width = 7, height = 8, units="in",res=200)
+    border = max(tmp$avg_logFC,-(min(tmp$avg_logFC)) )
+    print(
+      ggplot(tmp, aes(x = avg_logFC, y = logPvalue, color = used, size = used )) + 
+        geom_point() +
+        scale_color_manual(values = c("firebrick2","black"))+ #select gray65 or black
+        scale_size_manual(values = c( 1.5, 0.75) ) +
+        theme_linedraw(base_size = 40)+
+        theme(text=element_text(size = 12))+
+        geom_vline(xintercept = c(-0.3,0.3)) +
+        geom_hline(yintercept = c(2)) +
+        xlim(-border,border) +
+        ylab("- log10(p-value)") +
+        geom_text_repel(size =6,fontface ="bold", data = subset(tmp, used == "Label"),aes(label = Gene, hjust = 1.2)) +
+        NoLegend()
+      )
+  dev.off()
+}
+```
+
+#Seperate dataset
+```{r}
+Idents(scBRCA1) <- scBRCA1$DecontX
+levels(Idents(scBRCA1))
+naive <- subset(scBRCA1, idents = "No")
+naive
+Decon <- subset(scBRCA1, idents = "NaiveFiltered")
+Decon
+
+DefaultAssay(naive) = "integrated"
+naive <- RunUMAP(naive, dim = 1:30, spread =1 ,min.dist = 0.5)
+Idents(naive) <- naive$Identity.primary
+DimPlot(naive)
+
+DefaultAssay(Decon) = "integrated"
+Decon <- RunUMAP(Decon, dim = 1:30, spread =1 ,min.dist = 0.5)
+Idents(Decon) <- Decon$Identity.primary
+DimPlot(Decon)
+
+for(i in 1){
+      png(filename = "/home/siwakorn/BRCA/Fig/210407_IdentityPrimary_DecontXComparison/scBRCA1.Identity.Primary.Decon.DM.210407.png", width = 6, height = 6,units = "in", res =200)
+      print(
+            DimPlot(Decon, label = T, cols = col.Identity.Primary, repel = T)   + NoLegend()
+      )
+      dev.off()
+}
+
+for(i in c(selected.genes) ){
+       png(filename = paste0("/home/siwakorn/BRCA/Fig/210407_IdentityPrimary_DecontXComparison/scBRCA1.Identity.Primary.FP.Naive.",m,".",i,".210407.png"), 
+           width = 6, 
+           height = 6,units = "in", res =200)
+      print(FeaturePlot(naive, features = i, ) + scale_SummaerSea2  +Dot_scale+Dot_axis90 )
+      dev.off()
+        png(filename = paste0("/home/siwakorn/BRCA/Fig/210407_IdentityPrimary_DecontXComparison/scBRCA1.Identity.Primary.FP.Decon.",m,".",i,".210407.png"), 
+           width = 6, 
+           height = 6,units = "in", res =200)
+      print(FeaturePlot(Decon, features = i, ) + scale_SummaerSea2  +Dot_scale+Dot_axis90 )
+      dev.off()
+}
+DefaultAssay(naive) = "RNA"
+DefaultAssay(Decon) = "RNA"
+for(i in c("PTGER2","PTGER4")){
+       png(filename = paste0("/home/siwakorn/BRCA/Fig/210407_IdentityPrimary_DecontXComparison/scBRCA1.Identity.Primary.naive.",i,".210407.png"), 
+           width = 6, 
+           height = 3,units = "in", res =200)
+      print(VlnPlot(naive, features = i, pt.size =0.2) )
+      dev.off()
+        png(filename = paste0("/home/siwakorn/BRCA/Fig/210407_IdentityPrimary_DecontXComparison/scBRCA1.Identity.Primary.Decon.",i,".210407.png"), 
+           width = 6, 
+           height = 3,units = "in", res =200)
+      print(VlnPlot(Decon, features = i,  pt.size =0.2) )
+      dev.off()
+}
+
+DotPlot(naive, features = c("HLA-DPA1","HLA-DPB1","APOE","HLA-DRB1") )
+Vln
+```
+
+```{r}
+
+```
+
