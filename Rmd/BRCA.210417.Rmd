@@ -44,9 +44,9 @@ find <- function(x){
 }
 
 
-date = "210419"
+date = "210424"
 fig <-function(x){
-  paste0("/home/siwakorn/BRCA/Fig/210419_summary/scBRCA1.",x,".",gsub("-","", Sys.Date()),".png" )
+  paste0("/home/siwakorn/BRCA/Fig/210424_ISG/scBRCA1.",x,".",gsub("-","", Sys.Date()),".png" )
 }
 dir.create("/home/siwakorn/BRCA/Fig/210419_summary/")
 ```
@@ -572,7 +572,8 @@ plot
 ```{r}
 Idents(scBRCA1) <- scBRCA1$Identity_con
 Avg <- AverageExpression(scBRCA1)
-
+tmp = levels(scBRCA1$Identity_con)
+avg <- Avg$RNA[,intersect(tmp,colnames(Avg$RNA))]
 tmp = Avg$RNA[,intersect(levels(scBRCA1$Identity_con),colnames(Avg$RNA) )]
 write.csv(tmp, file = "/home/siwakorn/BRCA/Fig/210419_summary/scBRCA1.AverageExpression.210420.csv")
 
@@ -1026,6 +1027,7 @@ for(i in selected.cluster){
   tryCatch({
       print(i)
       up   = DE.list[[i]] %>% dplyr::filter(p_val < pcutoff) %>% filter(avg_logFC > 0.1 )
+      print(nrow(up))
       GO.UP  <- enrichGO(gene  = rownames(up),
                          OrgDb         = org.Hs.eg.db,
                       keyType       = 'SYMBOL',
@@ -1034,11 +1036,13 @@ for(i in selected.cluster){
                       pAdjustMethod = "BH",
                       pvalueCutoff  = 0.05,
                       qvalueCutoff  = 0.05)
+      print(nrow(as.data.frame(GO.UP)))
       },
       error = function(e){print(paste0("Error : " ,i))})
   tryCatch({
       print(i)
-        down = DE.list[[i]] %>% filter(p_val < pcutoff) %>% filter(avg_logFC < -0.1 )
+      down = DE.list[[i]] %>% filter(p_val < pcutoff) %>% filter(avg_logFC < -0.1 )
+      print(nrow(down))
       GO.DOWN  <- enrichGO(gene  = rownames(down),
                            OrgDb         = org.Hs.eg.db,
                            keyType       = 'SYMBOL',
@@ -1047,23 +1051,306 @@ for(i in selected.cluster){
                            pAdjustMethod = "BH",
                            pvalueCutoff  = 0.05,
                            qvalueCutoff  = 0.05)
+      print(nrow(as.data.frame(GO.DOWN)))
       },
       error = function(e){print(paste0("Error : " ,i ))})
+      
   GO.UP.list[[i]] <- GO.UP
   GO.DOWN.list[[i]] <- GO.DOWN
   UPregulated.list[[i]] <- up
   DOWNregulated.list[[i]] <- down
 }
-GO.UP.list 
-DE.list[[1]] %>% dplyr::filter(p_val < pcutoff) %>% filter(avg_logFC > 0.1 )
-[[3]] %>% as.data.frame()
+
+saveRDS(GO.UP.list,
+        file= "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.DecontXNativeFilterd.Count500Mt10.Identity.210413.GO.UP.list.210424..rds" )
+saveRDS(GO.DOWN.list,
+        file= "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/scBRCA1.DecontXNativeFilterd.Count500Mt10.Identity.210413.GO.DOWN.list.210424.rds" )
+
+
+lapply(GO.UP.list, function(x) nrow(as.data.frame(x) ) )
+lapply(GO.DOWN.list, function(x) nrow(as.data.frame(x) ) )
+
+```
+
+##ISG
+```{r}
+IsgG = read.table(file= "/home/siwakorn/GO_term.Human/Isg.IFNg.tsv", sep = "\t")$V1 %>% sort() %>% unique()
+IsgA = read.table(file= "/home/siwakorn/GO_term.Human/Isg.IFNa.tsv", sep = "\t")$V1 %>% sort() %>% unique()
+IsgB = read.table(file= "/home/siwakorn/GO_term.Human/Isg.IFNb.tsv", sep = "\t")$V1 %>% sort() %>% unique()
+IsgI = read.table(file= "/home/siwakorn/GO_term.Human/Isg.IFNI.tsv", sep = "\t")$V1 %>% sort() %>% unique()
+IsgCommon = intersect(IsgG, IsgI)
+Isg <-list(
+      "Response to IFN-gamma" = setdiff(IsgG,IsgCommon),
+      "Response to Type I IFN" = setdiff(IsgI,IsgCommon),
+      "Response to Type I and II IFN" = IsgCommon
+)
+
+selected.genes.list <- Isg
+GeneIndex = c()
+for(i in names(selected.genes.list)){
+      tmp = rep(i, length(selected.genes.list[[i]] ))
+      names(tmp) = selected.genes.list[[i]]
+      GeneIndex  <- c(GeneIndex ,tmp)
+}
+```
+
+###Differential DotPlot
+```{r}
+Idents(scBRCA1) <- scBRCA1$Identity_con
+df = DotPlot(scBRCA1, features = unique(unlist(selected.genes.list)))$data
+
+#Conversion
+tmp = rep("-",nrow(df))
+tmp[grep("CD45",df$id)] <- "CD45"
+tmp[grep("EP4",df$id)] <- "EP4"
+df$Condition <- factor(tmp, levels = rev(c("CD45","EP4")) )
+
+tmp = df$id
+tmp = gsub("_CD45","",tmp)
+tmp = gsub("_EP4","",tmp)
+df$Identity <- factor(tmp, levels = level1 )
+
+df$GeneGroup = lapply(as.character(df$features.plot), function(x) GeneIndex[x]  ) %>% unlist()
+df$GeneGroup = factor(df$GeneGroup, levels = names(selected.genes.list) )
+
+df$Exp.round <- round(df$avg.exp,2)
+
+df
+plot = ggplot(df, aes(y=features.plot, x =Condition,size = pct.exp, color = avg.exp.scaled) ) + 
+      geom_point() + 
+      geom_text(aes(label= Exp.round, x= Condition , y= features.plot), size=3,fontface="bold", colour = "black") +
+      scale_SummaerSea2 + # scale_SummaerSea = scale_color_gradientn(colours = c("#173F5F","#20639B","#3CAEA3","#F6D55C","#ED553B")) 
+      Dot_scale +         # scale_size(range = c(1.5,8),name = "Percent Expression") 
+      #scale_size(c(10,20,40,60,80,100),range = c(0,10),name = "Percent\nExpressing Cell") +
+      theme_classic()+ 
+      facet_grid(GeneGroup  ~ Identity, scales = "free", space="free", switch = "y") +
+      theme(plot.title = element_text(size = 15, face = "bold"),
+            axis.title = element_text(size = 12),
+            axis.text = element_text(color = "black"),
+            axis.text.x = element_text(angle = 90, hjust =1, vjust = 0.3),
+            axis.text.y = element_text(angle = 0, hjust =1),
+            strip.text.y.left = element_text(angle = 0),
+            legend.position = "bottom",
+            strip.placement = "outside"
+            ) +
+      labs(title = "scBRCA1 : Interferon response genes change between condition",
+           y = "Cluster - Sample",
+           x = "Signature Gene"
+           ) +
+      guides(colour = guide_colorbar("Scale\nExpression",
+                                     label.hjust = 0.5, 
+                                     title.theme = element_text(size =12), 
+                                     label.theme = element_text(size = 8) ),
+             size = guide_legend("Percent\nExpression", 
+                                 label.hjust = 0.5, 
+                                 title.theme = element_text(size =12), 
+                                 label.theme = element_text(size = 8) )        
+             )
+for(i in 1){
+      png(filename="/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/Fig/scBRCA1.DotPlot.ISGChange.210424.png", width = 14, height =48, units ="in", res = 200)
+      print(plot)
+      dev.off()
+}
+getwd
+
+```
+
+###Differential Heatmap
+```{r}
+selected.cluster <- levels(scBRCA1$Identity)
+selected.genes <- c(Isg$`Response to Type I IFN`, Isg$`Response to Type I and II IFN`) %>% intersect(rownames(avg))
+selected.genes <- c(Isg$`Response to Type I IFN`) %>% intersect(rownames(avg))
+selected.genes <- c(find("IFI"),find("IRF") ) %>% sort()
+
+for( i in 1){
+df <- matrix(ncol = 4, nrow = 0) %>% as.data.frame()
+colnames(df) <- c("Gene","Condition","z_score","Cluster")
+selected.cluster <- c("Mono_Complement","Mono_VEGFA", "Mono_APC", "Mono_SPP1", "Mono_PMN-like")
+
+for(i in selected.cluster ){
+  tmp = avg[selected.genes,] %>% dplyr::select(starts_with(i)) 
+  tmp2 = apply(tmp, 1, scale) %>% t() %>% as.data.frame() %>% as_tibble(rownames = "Gene")
+  colnames(tmp2) <- c("Gene","CD45","EP4")
+  tmp2 <- gather(tmp2, Condition, z_score, -Gene)
+  tmp2$Cluster <- i
+  df <- rbind(df, tmp2)
+  }
+df$Cluster <- factor(df$Cluster, levels = selected.cluster)
+df$Gene <- factor(df$Gene, levels = rev(sort(selected.genes)) )
+df$Condition <- factor(df$Condition, levels = c("CD45","EP4"))
+
+df$GeneGroup = lapply(as.character(df$Gene), function(x) GeneIndex[x]  ) %>% unlist()
+
+df <- filter(df, !Gene %in% c("ADIRF","ADIRF-AS1"))
+}
+for(i in 1){
+  png(filename = fig("Heatmap.ISG"), width = 4, height = 10, units ="in", res = 500 )
+  print(
+      ggplot(df,  aes(y = Gene, x = Condition)) + 
+        geom_tile(color = "white",aes(fill = z_score)) +
+        scale_fill_gradient2(mid="#FBFEF9",low="#0C6291",high="#A63446",space = "Lab",name="Scale Expression" ,na.value = "white") +
+        facet_grid( . ~ Cluster , scales = "free", space="free") +
+        #facet_grid( GeneGroup ~ Cluster , scales = "free", space="free") +
+        theme_classic() +
+        theme(text = element_text(size = 10, face = "bold"),
+              panel.spacing = unit(0.1, "lines"),
+              axis.title = element_blank(),
+              axis.ticks = element_blank(),
+              axis.line = element_blank(),
+              axis.text.y = element_text(size = 12, face = "bold", color = "black"),
+              axis.text.x = element_text(angle = 50, hjust = 1, size =12, face="bold", color = "black"),
+              strip.text.x = element_text(size = 10, angle = 90, color = "black"),
+              #axis.text.y = element_blank(),
+              #axis.text.x = element_blank(),
+              #strip.text.x = element_blank(), legend.position = "bottom",
+              strip.background = element_blank()
+          ) +
+        guides(colour = guide_colorbar(label.theme = element_text(size = 1)))
+      )
+  dev.off()
+}
+
+```
+
+##Angiogenesis-NFKB
+```{r}
+Angio.NFKB.list = list( 
+ "Angiogenesis" = c("IL1B","PTGS2","VEGFA","HIF1A","CXCL2","OSM","NR4A1","CXCR4","TNFAIP2"),
+ "NFKB" = c("NFKB1","NFKB2","NFKBIA","NFKBID","NFKBIL1","NFKBIZ","RELA","RELB")
+)
+selected.genes.list <- Angio.NFKB.list 
+GeneIndex = c()
+for(i in names(selected.genes.list)){
+      tmp = rep(i, length(selected.genes.list[[i]] ))
+      names(tmp) = selected.genes.list[[i]]
+      GeneIndex  <- c(GeneIndex ,tmp)
+}
+```
+
+###Differential DotPlot
+```{r}
+Idents(scBRCA1) <- scBRCA1$Identity_con
+df = DotPlot(scBRCA1, features = unique(unlist(selected.genes.list)))$data
+selected.cluster <- c("Mono_Complement","Mono_VEGFA", "Mono_APC", "Mono_SPP1", "Mono_PMN-like")
+#Conversion
+tmp = rep("-",nrow(df))
+tmp[grep("CD45",df$id)] <- "CD45"
+tmp[grep("EP4",df$id)] <- "EP4"
+df$Condition <- factor(tmp, levels = rev(c("CD45","EP4")) )
+
+tmp = df$id
+tmp = gsub("_CD45","",tmp)
+tmp = gsub("_EP4","",tmp)
+df$Identity <- factor(tmp, levels = level1 )
+
+df$GeneGroup = lapply(as.character(df$features.plot), function(x) GeneIndex[x]  ) %>% unlist()
+df$GeneGroup = factor(df$GeneGroup, levels = names(selected.genes.list) )
+
+df$Exp.round <- round(df$avg.exp,2)
+
+df$Condition <- factor(df$Condition, levels = c("CD45","EP4"))
+df$features.plot <- factor(df$features.plot, levels = rev(unlist(selected.genes.list)) )
+df2 <- filter(df, Identity %in% selected.cluster )
+
+
+plot = ggplot(df2, aes(y=features.plot, x =Condition,size = pct.exp, color = avg.exp.scaled) ) + 
+      geom_point() + 
+      geom_text(aes(label= Exp.round, x= Condition , y= features.plot), size=3,fontface="bold", colour = "black") +
+      scale_SummaerSea2 + # scale_SummaerSea = scale_color_gradientn(colours = c("#173F5F","#20639B","#3CAEA3","#F6D55C","#ED553B")) 
+      Dot_scale +         # scale_size(range = c(1.5,8),name = "Percent Expression") 
+      #scale_size(c(10,20,40,60,80,100),range = c(0,10),name = "Percent\nExpressing Cell") +
+      theme_classic()+ 
+      facet_grid(GeneGroup  ~ Identity, scales = "free", space="free", switch = "y") +
+      theme(plot.title = element_text(size = 15, face = "bold"),
+            axis.title = element_text(size = 12),
+            axis.text = element_text(color = "black"),
+            axis.text.x = element_text(angle = 90, hjust =1, vjust = 0.3),
+            axis.text.y = element_text(angle = 0, hjust =1),
+            strip.text.y.left = element_text(angle = 90, face = "bold", size = 13),
+            legend.position = "bottom",
+            strip.placement = "outside"
+            ) +
+      labs(title = "scBRCA1 : Angiogenesis - NFKB related genes change between condition",
+           y = "Genes",
+           x = "Cluster - Sample"
+           ) +
+      guides(colour = guide_colorbar("Scale\nExpression",
+                                     label.hjust = 0.5, 
+                                     title.theme = element_text(size =12), 
+                                     label.theme = element_text(size = 8) ),
+             size = guide_legend("Percent\nExpression", 
+                                 label.hjust = 0.5, 
+                                 title.theme = element_text(size =12), 
+                                 label.theme = element_text(size = 8) )        
+             )
+for(i in 1){
+      png(filename=fig("DotPlot.Angio"), width = 6, height =10, units ="in", res = 200)
+      print(plot)
+      dev.off()
+}
+getwd
+
+```
+
+###Differential Heatmap
+```{r}
+
+selected.genes <- c(unlist(Angio.NFKB.list)) %>% intersect(rownames(avg))
+
+for( i in 1){
+df <- matrix(ncol = 4, nrow = 0) %>% as.data.frame()
+colnames(df) <- c("Gene","Condition","z_score","Cluster")
+selected.cluster <- c("Mono_Complement","Mono_VEGFA", "Mono_APC", "Mono_SPP1", "Mono_PMN-like")
+
+for(i in selected.cluster ){
+  tmp = avg[selected.genes,] %>% dplyr::select(starts_with(i)) 
+  tmp2 = apply(tmp, 1, scale) %>% t() %>% as.data.frame() %>% as_tibble(rownames = "Gene")
+  colnames(tmp2) <- c("Gene","CD45","EP4")
+  tmp2 <- gather(tmp2, Condition, z_score, -Gene)
+  tmp2$Cluster <- i
+  df <- rbind(df, tmp2)
+  }
+df$Cluster <- factor(df$Cluster, levels = selected.cluster)
+df$Gene <- factor(df$Gene, levels = rev(selected.genes) )
+df$Condition <- factor(df$Condition, levels = c("CD45","EP4"))
+
+df$GeneGroup = lapply(as.character(df$Gene), function(x) GeneIndex[x]  ) %>% unlist()
+
+
+}
+for(i in 1){
+  png(filename = fig("Heatmap.Angio"), width = 5, height = 6, units ="in", res = 500 )
+  print(
+      ggplot(df,  aes(y = Gene, x = Condition)) + 
+        geom_tile(color = "white",aes(fill = z_score)) +
+        scale_fill_gradient2(mid="#FBFEF9",low="#0C6291",high="#A63446",space = "Lab",name="Scale Expression" ,na.value = "white") +
+        facet_grid( . ~ Cluster , scales = "free", space="free") +
+        #facet_grid( GeneGroup ~ Cluster , scales = "free", space="free") +
+        theme_classic() +
+        theme(text = element_text(size = 10, face = "bold"),
+              panel.spacing = unit(0.1, "lines"),
+              axis.title = element_blank(),
+              axis.ticks = element_blank(),
+              axis.line = element_blank(),
+              axis.text.y = element_text(size = 12, face = "bold", color = "black"),
+              axis.text.x = element_text(angle = 50, hjust = 1, size =12, face="bold", color = "black"),
+              strip.text.x = element_text(size = 10, angle = 90, color = "black"),
+              #axis.text.y = element_blank(),
+              #axis.text.x = element_blank(),
+              #strip.text.x = element_blank(), legend.position = "bottom",
+              strip.background = element_blank()
+          ) +
+        guides(colour = guide_colorbar(label.theme = element_text(size = 1)))
+      )
+  dev.off()
+}
 
 ```
 
 
 #Identity
 ```{r}
-scBRCA1 <- RenameIdents(scBRCA1, 
+scBRCA1 <- RenameIdents(scBRCA1,
                         '0' = "T_cell",
                         '1' = "T_cell",
                         '2' = "Myeloid",
