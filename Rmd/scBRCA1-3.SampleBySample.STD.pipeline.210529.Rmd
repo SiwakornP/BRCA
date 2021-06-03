@@ -1,0 +1,451 @@
+---
+title: "scBRCA3 CD45"
+author: "Siwakorn"
+date: "2021/5/28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+library(Seurat)
+library(tidyverse)
+library(celda)
+```
+
+
+```{r}
+data.dir <- c(
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/CellRangerOut/BRCA1_CD45/filtered_feature_bc_matrix/",
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/CellRangerOut/BRCA1_EP4/filtered_feature_bc_matrix/",
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/CellRangerOut/BRCA2_CD45/filtered_feature_bc_matrix",
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/CellRangerOut/BRCA3_CD45/filtered_feature_bc_matrix",
+      "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/CellRangerOut/BRCA3_EP4/filtered_feature_bc_matrix"
+)
+fig <-function(x){
+  paste0("/home/siwakorn/BRCA/Fig/210602/",x,".",gsub("-","", Sys.Date()),".png" )
+}
+RDS <- function(x){
+  paste0("/home/siwakorn/BRCA/RDS/",x,".rds" )
+}
+fin
+```
+
+#Clustering
+```{r}
+BRCA <- list()
+
+Batch = c("scBRCA1","scBRCA1","scBRCA2","scBRCA3","scBRCA3")
+OriginalBatch = c("BRCA10","BRCA10","BRCA11","BRCA12","BRCA12")
+Condition = c("CD45","EP4","CD45","CD45","EP4")
+ID <- paste0(Batch,"_",Condition)
+for(i in 1:length(data.dir) ){
+      tmp = Read10X(data.dir = data.dir[i]  )
+      BRCA[[i]] <- CreateSeuratObject(counts = tmp, project = Batch[i], min.cells = 3, min.features = 0)
+      BRCA[[i]][["percent.mt"]] <- PercentageFeatureSet(BRCA[[i]], pattern = "^MT-")
+      BRCA[[i]]$OriginalBatch <- as.factor(OriginalBatch[i])
+      BRCA[[i]]$Condition <- as.factor(Condition[i])
+      BRCA[[i]]$Decon <- "Native"
+      #BRCA[[i]] <- subset(BRCA[[i]], subset = nFeature_RNA <4300 & percent.mt <7)
+      BRCA[[i]] <- NormalizeData(BRCA[[i]], normalization.method = "LogNormalize", scale.factor = 10000)
+      BRCA[[i]] <- FindVariableFeatures(BRCA[[i]], selection.method = "vst", nfeatures = 2000)
+      BRCA[[i]] <- ScaleData(BRCA[[i]])
+      BRCA[[i]] <- RunPCA(BRCA[[i]], features = VariableFeatures(BRCA[[i]]))
+      BRCA[[i]] <- FindNeighbors(BRCA[[i]], dims = 1:30)
+      BRCA[[i]] <- FindClusters(BRCA[[i]], resolution = 0.8)
+      BRCA[[i]] <- RunUMAP(BRCA[[i]], dims = 1:30)
+      BRCA[[i]]$Cluster <- Idents(BRCA[[i]])
+      print(DimPlot(BRCA[[i]]) )
+}
+saveRDS(BRCA, file = RDS("BRCA.Naive.SeuratObject.STD.210602"))
+
+sce <- list()
+sce.counts <- list()
+for(i in 1:5){
+      print(levels(as.factor(BRCA[[i]]$orig.ident )))
+      print(levels(as.factor(BRCA[[i]]$Condition)))
+      sce[[i]] <- as.SingleCellExperiment(BRCA[[i]])
+      sce.counts[[i]] = SummarizedExperiment::assay(sce[[i]], i = "counts")
+      sce.counts[[i]] <- as.matrix(sce.counts[[i]])
+      tmp = (rowSums(sce.counts[[i]]) > 3 )
+      tmp2 = (colSums(sce.counts[[i]]) != 0 )
+      sce.counts[[i]] = (sce.counts[[i]])[tmp,tmp2] 
+      sce.counts[[i]] %>% rowSums() %>% min() %>% print()
+      sce.counts[[i]] %>% colSums() %>% min() %>% print()
+}
+saveRDS(sce.counts, file = RDS("BRCA.sce.counts.210602"))
+names(sce.counts) <- ID
+
+sce.decontx <- list()
+for(i in names(sce.counts)){
+      CB = colnames(sce.counts[[i]])
+      cell_cluster = BRCA[[i]]$Cluster
+      cell_cluster = cell_cluster[CB] 
+      sce.decontx[[i]] = decontX(sce.counts[[i]], z = cell_cluster)
+}
+saveRDS(sce.decontx, file = RDS("BRCA.sce.decontx.210602"))
+
+BRCA.Naive <- BRCA
+sce <- 0
+sce.counts <- 0
+BRCA <- list()
+for(i in 1:length( sce.decontx[[i]] )){
+      BRCA[[i]] <- CreateSeuratObject(counts = sce.decontx[[i]]$decontXcounts, project = Batch[i], min.cells = 3, min.features = 0)
+      BRCA[[i]][["percent.mt"]] <- PercentageFeatureSet(BRCA[[i]], pattern = "^MT-")
+      BRCA[[i]]$OriginalBatch <- as.factor(OriginalBatch[i])
+      BRCA[[i]]$Condition <- as.factor(Condition[i])
+}
+sce.decontx <- 0
+
+for(i in 1:length(BRCA) ){
+      #BRCA[[i]] <- subset(BRCA[[i]], subset = nFeature_RNA <4300 & percent.mt <7)
+      BRCA[[i]] <- NormalizeData(BRCA[[i]], normalization.method = "LogNormalize", scale.factor = 10000)
+      BRCA[[i]] <- FindVariableFeatures(BRCA[[i]], selection.method = "vst", nfeatures = 2000)
+      BRCA[[i]] <- ScaleData(BRCA[[i]])
+      BRCA[[i]] <- RunPCA(BRCA[[i]], features = VariableFeatures(BRCA[[i]]))
+      BRCA[[i]] <- FindNeighbors(BRCA[[i]], dims = 1:30)
+      BRCA[[i]] <- FindClusters(BRCA[[i]], resolution = 0.8)
+      BRCA[[i]] <- RunUMAP(BRCA[[i]], dims = 1:30)
+}
+#saveRDS(BRCA, file = RDS("BRCA.SeuratDecontX.SeuratObject.STD.210602"))
+BRCA<- readRDS(file = RDS("BRCA.SeuratDecontX.SeuratObject.STD.210602"))
+```
+
+#Cluster based QC
+```{r}
+for(i in 1:length(BRCA)){
+      print(
+            ggplot(BRCA[[i]][[]], aes(x = seurat_clusters, y= percent.mt)) + geom_jitter() + geom_hline(yintercept = 10)
+      )
+      print(
+            ggplot(BRCA[[i]][[]], aes(x = seurat_clusters, y= nCount_RNA)) + geom_jitter()
+      )
+}
+HighMT.Cluster<- list(
+      c(3,11,15),
+      c(3,7),
+      c(4,9,16),
+      c(3,10,14),
+      c(2,3)
+)
+names(HighMT.Cluster) <- ID
+
+for(i in 1:length(BRCA)){
+      #tmp = setdiff(levels(Idents(BRCA[[i]]) ),HighMT.Cluster[[i]]   )
+      #BRCA[[i]] <- subset(BRCA[[i]], idents = tmp)
+      BRCA[[i]] <- subset(BRCA[[i]], subset = percent.mt <10)
+      BRCA[[i]] <- FindVariableFeatures(BRCA[[i]], selection.method = "vst", nfeatures = 2000)
+      BRCA[[i]] <- ScaleData(BRCA[[i]])
+      BRCA[[i]] <- RunPCA(BRCA[[i]], features = VariableFeatures(BRCA[[i]]))
+      BRCA[[i]] <- FindNeighbors(BRCA[[i]], dims = 1:30)
+      BRCA[[i]] <- FindClusters(BRCA[[i]], resolution = 0.8)
+      BRCA[[i]] <- RunUMAP(BRCA[[i]], dims = 1:30)
+}
+
+#BRCA.ClusterQC <- BRCA
+#BRCA.ClusterQC.CutoffQC <- BRCA
+#BRCA.CutoffQC <- BRCA
+
+BRCA <- readRDS(file = RDS("BRCA.SeuratDecontX.STD.ClusterQC.CutoffQC.210602"))
+
+AllMarkers <- list(
+      readRDS(file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/AllMarkers.BRCA.SeuratDecontX.STD.ClusterQC.CutoffQC.Sample1.210602.rds"),
+      readRDS(file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/AllMarkers.BRCA.SeuratDecontX.STD.ClusterQC.CutoffQC.Sample2.210602.rds"),
+      readRDS(file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/AllMarkers.BRCA.SeuratDecontX.STD.ClusterQC.CutoffQC.Sample3.210602.rds"),
+      readRDS(file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/AllMarkers.BRCA.SeuratDecontX.STD.ClusterQC.CutoffQC.Sample4.210602.rds"),
+      readRDS(file = "/yshare1/ZETTAI_path_WA_slash_home_KARA/home/siwakorn/BRCA/RDS/AllMarkers.BRCA.SeuratDecontX.STD.ClusterQC.CutoffQC.Sample5.210602.rds")
+)
+names(AllMarkers) <- ID
+AllMarkers$scBRCA1_CD45 %>% group_by(cluster) %>% top_n(n=50, wt =avg_log2FC)
+AllMarkers[[5]] %>% filter(cluster == 10)  %>% filter(pct.1 > 0.7) %>% arrange(desc( avg_log2FC ))
+```
+
+
+#Assign Identity
+```{r}
+for(i in 1:5){
+      Idents(BRCA[[i]]) <- BRCA[[i]]$Cluster08
+}
+BRCA[[1]]$Cluster08 <- Idents(BRCA[[1]])
+BRCA[[1]] <- RenameIdents(BRCA[[1]],
+                     '7' = "NK1",
+                     '11' = "NK2",
+                     '3' = "T_CD8",
+                     '0' = "T_CD4",
+                     '5' = "T_CD4",
+                     '15' = "T_CD4_IL17A",
+                     '1' = "T_Treg",
+                     '12' = "T_Prof",
+                     '10' = "T_Rbs",
+                     '14' = "B_cell",
+                     '13' = "cDC1",
+                     '17' = "cDC2",
+                     '18' = "pDC",
+                     '4' = "Mono_ComSPP1",
+                     '9' = "Mono_ComSPP1",
+                     '6' = "Mono_S100A8",
+                     '2' = "Mono_VEGFA",
+                     '8' = "Mast",
+                     '16' = "Endothelial"
+                          )
+BRCA[[1]]$Identity.Ind <- Idents(BRCA[[1]])
+
+BRCA[[2]]$Cluster08 <- Idents(BRCA[[2]])
+BRCA[[2]] <- RenameIdents(BRCA[[2]],
+                     '8' = "T_cell",
+                     '7' = "cDC2",
+                     '0' = "Mono_Com",
+                     '1' = "Mono_Com",
+                     '4' = "Mono_com",
+                     '3' = "Mono_SPP1",
+                     '6' = "Mono_SPP1",
+                     '2' = "Mono_S100A8",
+                     '5' = "Mono_VEGFA"
+                          )
+BRCA[[2]]$Identity.Ind <- Idents(BRCA[[2]])
+
+BRCA[[3]]$Cluster08 <- Idents(BRCA[[3]])
+BRCA[[3]] <- RenameIdents(BRCA[[3]],
+                     '14' = "NK1",
+                     '11' = "NK2",
+                     '0' = "T_CD8",
+                     '9' = "T_CD8",
+                     '1' = "T_CD4",
+                     '2' = "T_CD4",
+                     '3' = "T_CD4",
+                     '7' = "T_CD4",
+                     '6' = "T_Treg",
+                     '4' = "B_cell",
+                     '5' = "B_cell",
+                     '8' = "B_cell",
+                     '13' = "Plasma_cell",
+                     '10' = "Mono_ComSPP1",
+                     '12' = "Mono_S100A8"
+                          )
+BRCA[[3]]$Identity.Ind <- Idents(BRCA[[3]])
+
+BRCA[[4]]$Cluster08 <- Idents(BRCA[[4]])
+BRCA[[4]] <- RenameIdents(BRCA[[4]],
+                     '6' = "NK",
+                     '2' = "T_CD8",
+                     '3' = "T_CD8",
+                     '11' = "T_CD8",
+                     '0' = "T_CD4",
+                     '1' = "T_CD4",
+                     '5' = "T_CD4",
+                     '9' = "T_CD4",
+                     '4' = "T_Treg",
+                     '7' = "T_Treg",
+                     '12' = "T_Prof",
+                     '8' = "B_cell",
+                     '10' = "B_cell",
+                     '13' = "Plasma_cell",
+                     '14' = "Epithelial"
+                          )
+BRCA[[4]]$Identity.Ind <- Idents(BRCA[[4]])
+
+BRCA[[5]]$Cluster08 <- Idents(BRCA[[5]])
+BRCA[[5]] <- RenameIdents(BRCA[[5]],
+                     '8' = "NK",
+                     '0' = "T_CD8",
+                     '3' = "T_CD4",
+                     '1' = "T_CD4",
+                     '6' = "T_Treg",
+                     '7' = "T_Prof",
+                     '2' = "B_cell",
+                     '4' = "Plasma_cell",
+                     '5' = "Plasma_cell",
+                     '9' = "Mono",
+                     '10' = "Epithelial"
+                          )
+BRCA[[5]]$Identity.Ind <- Idents(BRCA[[5]])
+
+saveRDS(BRCA, file = RDS("BRCA.SeuratDecontX.STD.ClusterQC.CutoffQC.210602"))
+```
+
+
+```{r, fig.width=9}
+for(i in 4){
+      print(
+            ggplot(BRCA[[i]][[]], aes(x = seurat_clusters, y= percent.mt)) + geom_jitter() + geom_hline(yintercept = 10)
+      )
+      print(
+            ggplot(BRCA[[i]][[]], aes(x = seurat_clusters, y= nCount_RNA)) + geom_jitter()
+      )
+      print(VlnPlot(BRCA[[i]], features = "GZMK"))
+      print(VlnPlot(BRCA[[i]], features = "TIGIT"))
+      print(VlnPlot(BRCA[[i]], features = "CTLA4"))
+      print(VlnPlot(BRCA[[i]], features = "FOXP3"))
+      print(VlnPlot(BRCA[[i]], features = "XCL2"))
+      print(FeaturePlot(BRCA[[3]], features = "C1QA"))
+      }
+```
+
+
+
+
+```{r,fig.width=9,fig.height=8}
+for(i in 1:length(BRCA) ){
+      print(DimPlot(BRCA[[i]], label =T) )
+      
+}
+
+for(i in 1:length(BRCA) ){
+      print(DimPlot(BRCA[[i]], label =T) +NoLegend())
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "CD3D") + color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "CD8A")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "CD4")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "FOXP3")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "MKI67")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "XCL1")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({ print(FeaturePlot(BRCA[[i]], features = "NCAM1")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "CD79A")+ color_orange)}, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "TNFRSF17")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "IGKC")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "CSF1R")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "CD14")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "FCGR3A")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "S100A8")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "VCAN")+ color_orange) }, error = function(e){print(e)} )
+     tryCatch({ print(FeaturePlot(BRCA[[i]], features = "SPP1")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "C1QA")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "CCL3")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "VEGFA")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "CD1C")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "CD207")+ color_orange) }, error = function(e){print(e)} )
+      tryCatch({print(FeaturePlot(BRCA[[i]], features = "CLEC9A")+ color_orange) }, error = function(e){print(e)} )
+}
+
+for(i in 1:length(BRCA) ){
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "CD3D") + NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "CD8A")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "CD4")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "FOXP3")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "MKI67")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "XCL1")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({ print(VlnPlot(BRCA[[i]], features = "NCAM1")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "CD79A")+ NoLegend())}, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "TNFRSF17")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "IGKC")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "CSF1R")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "CD14")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "FCGR3A")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "S100A8")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "VCAN")+ NoLegend()) }, error = function(e){print(e)} )
+     tryCatch({ print(VlnPlot(BRCA[[i]], features = "SPP1")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "C1QA")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "CCL3")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "VEGFA")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "CD1C")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "CD207")+ NoLegend()) }, error = function(e){print(e)} )
+      tryCatch({print(VlnPlot(BRCA[[i]], features = "CLEC9A")+ NoLegend()) }, error = function(e){print(e)} )
+}
+```
+
+#Study BatchEffect
+```{r}
+FeaturePlot(BRCA[[i]], features = "MT-CO1")
+selected.genes <- c("XCL1","NCR1","NCAM1","CD3D","CD3E","CD8A","CD8B","CD4","MKI67","CD79A","CSF1R","GAPDH","ACTB","MT-CO1")
+for(i in selected.genes){
+      for(j in 1:5){
+             tryCatch({ print(VlnPlot(BRCA[[j]], features = i)) }, error = function(e){print(e)} )
+      }
+}
+```
+
+```{r}
+HKG <- c("GAPDH","ACTB","MT-CO1")
+i=1
+j="GAPDH"
+for(i in HKG){
+      for(j in c(3,4,5)){
+            print(DotPlot(BRCA[[j]], features = i)$data)
+      }
+}
+for(i in c("IFNG","CCL5","ISG15")){
+      for(j in c(4,5)){
+            print(DotPlot(BRCA[[j]], features = i)$data)
+      }
+}
+```
+
+
+```{r}
+for(i in 1:length(data.dir) ){
+      png(filename = fig(paste0("UMAP.sample",i)), width = 7, height =6 ,res = 300, units ="in" )
+      print(DimPlot(BRCA[[i]], label =T) )
+      dev.off()
+      
+}
+```
+
+
+```{r,fig.width=9,fig.height=8}
+
+B1.5 <- FindMarkers(BRCA[[1]], ident.1 = "5")  
+B1.11 <- FindMarkers(BRCA[[1]], ident.1 = "11")  
+
+B1.11 %>% filter(pct.1 >0.9) %>% arrange(desc(avg_log2FC))
+```
+
+```{r}
+DefaultAssay(BRCA[[i]])
+for(i in selected.genes){
+      tryCatch({
+      print(
+            FeaturePlot(BRCA[[i]], features = i) + NoLegend()
+      )
+      }, 
+      error = function(e) {print(e)}
+      )
+}
+```
+
+#scBRCA3
+```{r, fig.width=9, fig.height=8}
+scBRCA3 <- readRDS(file = RDS("Integrated.scBRCA3.SeuratDecontX.STD.ClusterQC.CutoffQC.210602"))
+Idents(scBRCA3) <- scBRCA3$Identity.Ind
+
+VlnPlot(scBRCA3, features = "MKI67")
+table(scBRCA3$integrated_snn_res.1, scBRCA3$Identity.Ind)
+DimPlot(scBRCA3,label =T) + NoLegend()
+Idents(scBRCA3) <- scBRCA3$integrated_snn_res.1
+M.C1 <- FindMarkers(scBRCA3, ident.1 = "1")
+C1<- subset(scBRCA3, idents = "1")
+DefaultAssay(C1) <- "integrated"
+M.C1 %>% arrange(desc(avg_log2FC))
+```
+
+
+```{r, fig.width=9, fig.height=8}
+C1 <- RunPCA(C1)
+C1 <- FindNeighbors(C1, dims = 1:25)
+C1 <- FindClusters(C1, resolution = 0.8)
+C1 <- RunUMAP(C1, dims = 1:25, spread =1, min.dist =0.2)
+DimPlot(C1)
+Idents(C1) <- C1$Condition
+levels(Idents(C1))
+DE.C1 <- FindMarkers(C1, ident.1 = "CD45", ident.2 = "EP4")
+DE.C1%>% filter(pct.1 > 0.3) %>% arrange(desc(avg_log2FC))
+```
+
+
+
+#Save
+
+```{r}
+saveRDS(BRCA.ClusterQC, file = RDS("BRCA.SeuratDecontX.STD.ClusterQC.210602"))
+saveRDS(BRCA.ClusterQC.CutoffQC, file = RDS("BRCA.SeuratDecontX.STD.ClusterQC.CutoffQC.210602"))
+saveRDS(BRCA.CutoffQC, file = RDS("BRCA.SeuratDecontX.STD.CutoffQC.210602"))
+
+
+```
+
+```{r}
+saveRDS(BRCA, file = RDS("BRCA.Naive.SeuratObject.STD.210602"))
+saveRDS(sce.counts, file = RDS("BRCA.sce.counts.210602"))
+saveRDS(sce.decontx, file = RDS("BRCA.sce.decontx.210602"))
+```
